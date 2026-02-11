@@ -1,25 +1,17 @@
-import { useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import TaskCard from "./TaskCard";
 
-export default function TaskColumn({ id, title, tasks, onCreateTask, onDeleteTask }) {
+export default function TaskColumn({ id, title, tasks, onOpenTask }) {
   const { setNodeRef, isOver } = useDroppable({ id });
-  const [value, setValue] = useState("");
-
-  const submit = () => {
-    const t = value.trim();
-    if (!t) return;
-    onCreateTask(id, t);
-    setValue("");
-  };
 
   return (
     <div
       ref={setNodeRef}
       style={{
         flex: 1,
-        minWidth: 260,
+        minWidth: 280,
+        maxWidth: 420,
         padding: 14,
         borderRadius: 16,
         border: isOver
@@ -27,28 +19,14 @@ export default function TaskColumn({ id, title, tasks, onCreateTask, onDeleteTas
           : "1px solid rgba(255,255,255,0.12)",
         background: isOver ? "rgba(79, 140, 255, 0.12)" : "rgba(0,0,0,0.18)",
         transition: "120ms",
-        minHeight: 220,
+        minHeight: 240,
       }}
     >
-      <div style={{ fontWeight: 800, marginBottom: 10 }}>{title}</div>
-
-      {/* Create task */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <input
-          className="input"
-          placeholder="Nouvelle tâche..."
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-        />
-        <button className="btn btn-primary" style={{ width: "auto" }} onClick={submit}>
-          +
-        </button>
-      </div>
+      <div style={{ fontWeight: 900, marginBottom: 12 }}>{title}</div>
 
       <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
         {tasks.map((t) => (
-          <TaskCard key={t.id} task={t} onDelete={() => onDeleteTask(t.id)} />
+          <TaskCard key={t.id} task={t} onOpen={() => onOpenTask(t)} />
         ))}
       </SortableContext>
 

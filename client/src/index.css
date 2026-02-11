@@ -125,3 +125,49 @@ a { color: var(--text); }
   color: var(--muted);
   font-size: 14px;
 }
+
+.modal-backdrop{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  z-index: 50;
+}
+
+.modal{
+  width: 100%;
+  max-width: 520px;
+  background: rgba(18, 22, 40, 0.95);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 16px;
+  box-shadow: 0 20px 80px rgba(0,0,0,0.5);
+  backdrop-filter: blur(10px);
+}
+
+.modal-header{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 0 16px;
+}
+
+.modal-title{
+  margin: 0;
+  font-size: 18px;
+}
+
+.modal-close{
+  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.85);
+  border-radius: 10px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.modal-body{
+  padding: 16px;
+  color: rgba(255,255,255,0.9);
+}

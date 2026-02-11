@@ -1,7 +1,7 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-export default function TaskCard({ task, onDelete }) {
+export default function TaskCard({ task, onOpen }) {
   const {
     attributes,
     listeners,
@@ -14,60 +14,56 @@ export default function TaskCard({ task, onDelete }) {
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.6 : 1,
+    opacity: isDragging ? 0.65 : 1,
     padding: 12,
     borderRadius: 12,
     border: "1px solid rgba(255,255,255,0.12)",
     background: "rgba(255,255,255,0.06)",
     marginBottom: 10,
-    position: "relative",
   };
 
   return (
     <div ref={setNodeRef} style={style}>
-      {/* Delete button */}
-      <button
-        type="button"
-        onPointerDown={(e) => e.stopPropagation()}   // ✅ important
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onDelete();
-        }}
+      {/* Click zone: open edit modal */}
+      <div
+        onClick={onOpen}
         style={{
-          position: "absolute",
-          top: 8,
-          right: 8,
-          border: "1px solid rgba(255,255,255,0.15)",
-          background: "rgba(0,0,0,0.25)",
-          color: "rgba(255,255,255,0.8)",
-          borderRadius: 10,
-          padding: "4px 8px",
           cursor: "pointer",
+          fontWeight: 800,
+          lineHeight: 1.2,
+          marginBottom: 8,
         }}
       >
-        ✕
-      </button>
+        {task.title}
+      </div>
 
-      {/* Drag handle (seul endroit draggable) */}
+      {task.description && (
+        <div style={{ opacity: 0.75, fontSize: 13, marginBottom: 10 }}>
+          {task.description}
+        </div>
+      )}
+
+      {/* Drag handle ONLY (so clicks are reliable) */}
       <div
         {...attributes}
         {...listeners}
         style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "6px 10px",
+          borderRadius: 10,
+          border: "1px solid rgba(255,255,255,0.12)",
+          background: "rgba(0,0,0,0.20)",
           cursor: "grab",
-          fontWeight: 700,
-          paddingRight: 30,
           userSelect: "none",
+          opacity: 0.85,
+          fontSize: 13,
         }}
+        title="Glisser pour déplacer"
       >
-        ⠿ {task.title}
+        ⠿ Déplacer
       </div>
-
-      {task.description && (
-        <div style={{ opacity: 0.75, marginTop: 6, fontSize: 13 }}>
-          {task.description}
-        </div>
-      )}
     </div>
   );
 }
