@@ -1,5 +1,6 @@
 require("dotenv").config();
 const express = require("express");
+const cors = require("cors");
 const pool = require("./config/db");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -17,6 +18,7 @@ const io = new Server(server, {
 
 app.set("io", io);
 
+app.use(cors());
 app.use(express.json());
 
 app.use("/auth", authRoutes);
