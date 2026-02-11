@@ -1,6 +1,8 @@
 require("dotenv").config();
 const express = require("express");
 const pool = require("./config/db");
+const http = require("http");
+const { Server } = require("socket.io");
 
 const auth = require("./middleware/auth");
 const authRoutes = require("./routes/auth");
@@ -8,11 +10,22 @@ const authRoutes = require("./routes/auth");
 const app = express();
 const PORT = 5000;
 
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: "*" }
+});
+
+app.set("io", io);
+
 app.use(express.json());
 
 app.use("/auth", authRoutes);
 app.use("/boards", auth, require("./routes/boards"));
 app.use("/tasks", auth, require("./routes/tasks"));
+
+server.listen(PORT, () => {
+  console.log(`Server running on ${PORT}`);
+});
 
 app.get("/", (req, res) => {
   res.send("API running");

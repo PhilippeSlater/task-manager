@@ -54,8 +54,11 @@ exports.createTask = async (req, res) => {
         ownerId,
       ]
     );
+    const newTask = result.rows[0];
+    const io = req.app.get("io");
+    io.emit("taskCreated", newTask);
 
-    res.status(201).json(result.rows[0]);
+    res.status(201).json(newTask); 
   } catch (err) {
     res.status(500).json({ message: "Server error" });
   }
@@ -91,9 +94,12 @@ exports.updateTask = async (req, res) => {
     if (!result.rows.length)
       return res.status(404).json({ message: "Task not found" });
 
-    res.json(result.rows[0]);
+    const updatedTask = result.rows[0];
+    const io = req.app.get("io");
+    io.emit("taskUpdated", updatedTask);
+
+    res.json(updatedTask);
   } catch {
-    console.error("Boards error:", err);  
     res.status(500).json({ message: "Server error" });
   }
 };
@@ -114,6 +120,10 @@ exports.deleteTask = async (req, res) => {
 
     if (!result.rows.length)
       return res.status(404).json({ message: "Task not found" });
+
+    const deleted = result.rows[0];
+    const io = req.app.get("io");
+    io.emit("taskDeleted", { id: deleted.id, board_id: deleted.board_id });
 
     res.json({ message: "Deleted" });
   } catch {
