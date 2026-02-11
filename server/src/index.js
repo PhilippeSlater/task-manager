@@ -1,13 +1,18 @@
 require("dotenv").config();
 const express = require("express");
 const pool = require("./config/db");
-const authRoutes = require("./routes/auth.routes");
+
+const auth = require("./middleware/auth");
+const authRoutes = require("./routes/auth");
 
 const app = express();
 const PORT = 5000;
 
 app.use(express.json());
+
 app.use("/auth", authRoutes);
+app.use("/boards", auth, require("./routes/boards"));
+app.use("/tasks", auth, require("./routes/tasks"));
 
 app.get("/", (req, res) => {
   res.send("API running");
