@@ -63,37 +63,42 @@ export default function Dashboard() {
     const { active, over } = event;
     if (!over) return;
 
-    const taskId = active.id;
-    const overId = over.id;
+    const taskId = active.id; //The current task moving
+    const overId = over.id; //Where we drop it (column("todo", "doing", ...) or another task(id))
 
-    //Get column base on the card we landed on
-    const overTask = tasks.find((t) => t.id === overId);
+    //Find the task we are movinh
     const activeTask = tasks.find((t) => t.id === taskId);
     if (!activeTask) return;
 
-    const targetStatus = overTask ? overTask.status : overId;
-    if (!targetStatus) return;
+    //did we drop on another task (is the over.id another task or a column)
+    const overTask = tasks.find((t) => t.id === overId);
 
-    //Add tasks to the end on the column
+    //On another task, get status
+    //Else get the over.id, its the column name
+    const targetStatus = overTask ? overTask.status : overId;
+    if (!["todo", "doing", "done"].includes(targetStatus)) return;
+
+    //Find all task in the same status
     const targetList = tasks.filter((t) => t.status === targetStatus && t.id !== taskId);
+    //Add as the last column element
     const newPosition = targetList.length;
 
-    // Optimistic UI
+    // optimistic UI
     setTasks((prev) =>
       prev.map((t) =>
         t.id === taskId ? { ...t, status: targetStatus, position: newPosition } : t
       )
     );
 
-    // Persist backend
     try {
       await api.patch(`/tasks/${taskId}`, { status: targetStatus, position: newPosition });
     } catch (e) {
       console.error(e);
-      // fallback: reload board tasks
+      //Reload all task from the DB, and display the truth
       if (selectedBoardId) loadTasks(selectedBoardId);
     }
   };
+
 
   return (
     <div style={{ padding: 20 }}>
