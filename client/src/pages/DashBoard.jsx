@@ -14,6 +14,9 @@ export default function Dashboard() {
   const [boards, setBoards] = useState([]);
   const [selectedBoardId, setSelectedBoardId] = useState(null);
   const [tasks, setTasks] = useState([]);
+  //State to create new board and new task
+  const [newBoardName, setNewBoardName] = useState("");
+  const [newTaskTitle, setNewTaskTitle] = useState({ todo: "", doing: "", done: "" });
 
   //Get all boards for the user
   useEffect(() => {
@@ -35,7 +38,8 @@ export default function Dashboard() {
     });
 
     socket.on("taskDeleted", ({ id, board_id }) => {
-      if (board_id === selectedBoardId) setTasks((prev) => prev.filter((x) => x.id !== id));
+      if (board_id !== selectedBoardId) return;
+      setTasks((prev) => prev.filter((t) => t.id !== id));
     });
 
     return () => socket.disconnect();
@@ -57,6 +61,53 @@ export default function Dashboard() {
       done: sort(tasks.filter((t) => t.status === "done")),
     };
   }, [tasks]);
+
+  const createBoard = async () => {
+    const name = newBoardName.trim();
+    if (!name) return;
+
+    const res = await api.post("/boards", { name });
+    setBoards((prev) => [res.data, ...prev]);
+    setNewBoardName("");
+  };
+
+
+  //Don't use optimistic in create. It will duplicate
+  const createTask = async (status, title) => {
+    if (!selectedBoardId) return;
+
+    try {
+      await api.post("/tasks", {
+        board_id: selectedBoardId,
+        title,
+        status,
+        position: tasks.filter((t) => t.status === status).length,
+      });
+    } catch (e) {
+      console.error(e);
+      alert("Impossible de créer la tâche");
+    }
+  };
+
+
+  const deleteTask = async (taskId) => {
+    if (typeof taskId === "string" && taskId.startsWith("temp-")) {
+      setTasks((prev) => prev.filter((t) => t.id !== taskId));
+      return;
+    }
+
+    const previous = tasks;
+    setTasks((prev) => prev.filter((t) => t.id !== taskId));
+
+    try {
+      await api.delete(`/tasks/${taskId}`);
+    } catch (e) {
+      console.error("DELETE FAILED", e?.response?.data || e.message);
+      setTasks(previous);
+      alert(e?.response?.data?.message || "Impossible de supprimer la tâche");
+    }
+  };
+
 
   //Set the DnD
   const onDragEnd = async (event) => {
@@ -102,8 +153,29 @@ export default function Dashboard() {
 
   return (
     <div style={{ padding: 20 }}>
+      <button
+        className="btn btn-secondary"
+        style={{ width: "auto" }}
+        onClick={() => {
+          localStorage.removeItem("token");
+          window.location.href = "/";
+        }}
+      >
+        Logout
+      </button>
       <h1 style={{ marginTop: 0 }}>Dashboard</h1>
-
+      <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+        <input
+          className="input"
+          style={{ maxWidth: 320 }}
+          placeholder="Nouveau board..."
+          value={newBoardName}
+          onChange={(e) => setNewBoardName(e.target.value)}
+        />
+        <button className="btn btn-primary" style={{ width: "auto" }} onClick={createBoard}>
+          + Créer board
+        </button>
+      </div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
         {boards.map((b) => (
           <button
@@ -122,9 +194,9 @@ export default function Dashboard() {
       ) : (
         <DndContext collisionDetection={closestCorners} onDragEnd={onDragEnd}>
           <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-            <TaskColumn id="todo" title="À faire" tasks={byStatus.todo} />
-            <TaskColumn id="doing" title="En cours" tasks={byStatus.doing} />
-            <TaskColumn id="done" title="Terminé" tasks={byStatus.done} />
+            <TaskColumn id="todo" title="À faire" tasks={byStatus.todo} onCreateTask={createTask} onDeleteTask={deleteTask} />
+            <TaskColumn id="doing" title="En cours" tasks={byStatus.doing} onCreateTask={createTask} onDeleteTask={deleteTask} />
+            <TaskColumn id="done" title="Terminé" tasks={byStatus.done} onCreateTask={createTask} onDeleteTask={deleteTask} />
           </div>
         </DndContext>
       )}

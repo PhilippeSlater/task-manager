@@ -109,7 +109,6 @@ exports.deleteTask = async (req, res) => {
   try {
     const ownerId = req.user.id;
     const taskId = Number(req.params.id);
-
     const result = await pool.query(
       `DELETE FROM tasks t
        USING boards b

@@ -1,9 +1,18 @@
+import { useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import TaskCard from "./TaskCard";
 
-export default function TaskColumn({ id, title, tasks }) {
-  const { setNodeRef, isOver } = useDroppable({ id }); //Droppable column
+export default function TaskColumn({ id, title, tasks, onCreateTask, onDeleteTask }) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  const [value, setValue] = useState("");
+
+  const submit = () => {
+    const t = value.trim();
+    if (!t) return;
+    onCreateTask(id, t);
+    setValue("");
+  };
 
   return (
     <div
@@ -18,14 +27,28 @@ export default function TaskColumn({ id, title, tasks }) {
           : "1px solid rgba(255,255,255,0.12)",
         background: isOver ? "rgba(79, 140, 255, 0.12)" : "rgba(0,0,0,0.18)",
         transition: "120ms",
-        minHeight: 160, //Add minimum for empty column
+        minHeight: 220,
       }}
     >
-      <div style={{ fontWeight: 800, marginBottom: 12 }}>{title}</div>
+      <div style={{ fontWeight: 800, marginBottom: 10 }}>{title}</div>
+
+      {/* Create task */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <input
+          className="input"
+          placeholder="Nouvelle tâche..."
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+        />
+        <button className="btn btn-primary" style={{ width: "auto" }} onClick={submit}>
+          +
+        </button>
+      </div>
 
       <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
         {tasks.map((t) => (
-          <TaskCard key={t.id} task={t} />
+          <TaskCard key={t.id} task={t} onDelete={() => onDeleteTask(t.id)} />
         ))}
       </SortableContext>
 
