@@ -39,6 +39,14 @@ io.on("connection", (socket) => {
 
 app.use(cors());
 app.use(express.json());
+app.use(cors({
+  origin: [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "https://task-manager-1-9tjt.onrender.com"
+  ],
+  credentials: true,
+}));
 
 app.use("/auth", authRoutes);
 app.use("/boards", auth, require("./routes/boards"));
