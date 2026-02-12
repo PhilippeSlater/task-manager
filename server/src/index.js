@@ -12,8 +12,15 @@ const app = express();
 const PORT = 5000;
 
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: "*" }
+const io = new Server(httpServer, {
+  cors: {
+    origin: [
+      "http://localhost:5173",
+      "http://localhost:3000",
+      "https://task-manager-1-9tjt.onrender.com",
+    ],
+    methods: ["GET", "POST", "PATCH", "DELETE"],
+  },
 });
 
 app.set("io", io);
@@ -37,7 +44,6 @@ io.on("connection", (socket) => {
   });
 });
 
-app.use(cors());
 app.use(express.json());
 app.use(cors({
   origin: [
