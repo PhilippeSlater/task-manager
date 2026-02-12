@@ -17,6 +17,25 @@ const io = new Server(server, {
 });
 
 app.set("io", io);
+io.on("connection", (socket) => {
+  console.log("socket connected", socket.id);
+
+  socket.on("board:join", (boardId) => {
+    const room = `board-${boardId}`;
+    socket.join(room);
+    // console.log(`${socket.id} joined ${room}`);
+  });
+
+  socket.on("board:leave", (boardId) => {
+    const room = `board-${boardId}`;
+    socket.leave(room);
+    // console.log(`${socket.id} left ${room}`);
+  });
+
+  socket.on("disconnect", () => {
+    // console.log("socket disconnected", socket.id);
+  });
+});
 
 app.use(cors());
 app.use(express.json());

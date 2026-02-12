@@ -6,7 +6,7 @@ import Dashboard from "./pages/Dashboard";
 import { AuthProvider } from "./context/AuthContext";
 
 const Private = ({ children }) =>
-  localStorage.getItem("token") ? children : <Navigate to="/" />;
+  sessionStorage.getItem("token") ? children : <Navigate to="/" />;
 
 export default function App() {
   return (

@@ -55,8 +55,7 @@ exports.createTask = async (req, res) => {
       ]
     );
     const newTask = result.rows[0];
-    const io = req.app.get("io");
-    io.emit("taskCreated", newTask);
+    req.app.get("io").to(`board-${newTask.board_id}`).emit("taskCreated", newTask);
 
     res.status(201).json(newTask); 
   } catch (err) {
@@ -95,8 +94,7 @@ exports.updateTask = async (req, res) => {
       return res.status(404).json({ message: "Task not found" });
 
     const updatedTask = result.rows[0];
-    const io = req.app.get("io");
-    io.emit("taskUpdated", updatedTask);
+    req.app.get("io").to(`board-${updatedTask.board_id}`).emit("taskUpdated", updatedTask);
 
     res.json(updatedTask);
   } catch {
@@ -121,8 +119,9 @@ exports.deleteTask = async (req, res) => {
       return res.status(404).json({ message: "Task not found" });
 
     const deleted = result.rows[0];
-    const io = req.app.get("io");
-    io.emit("taskDeleted", { id: deleted.id, board_id: deleted.board_id });
+    req.app.get("io")
+      .to(`board-${deleted.board_id}`)
+      .emit("taskDeleted", { id: deleted.id, board_id: deleted.board_id });
 
     res.json({ message: "Deleted" });
   } catch {

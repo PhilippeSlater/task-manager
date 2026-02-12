@@ -8,6 +8,8 @@ import TaskColumn from "../components/TaskColumn";
 import TaskCreateModal from "../components/TaskCreateModal";
 import TaskEditModal from "../components/TaskEditModal";
 
+import { useRef } from "react";
+
 const SOCKET_URL = "http://localhost:5000";
 
 export default function Dashboard() {
@@ -19,6 +21,8 @@ export default function Dashboard() {
   const [showCreateTask, setShowCreateTask] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
 
+  const [socket, setSocket] = useState(null);
+  const prevBoardRef = useRef(null);
   // --- Load boards on mount
   useEffect(() => {
     api
@@ -33,6 +37,17 @@ export default function Dashboard() {
 
   // --- Load tasks for a board
   const loadTasks = async (boardId) => {
+    setShowCreateTask(false);
+    setEditingTask(null);
+
+    // leave old room
+    const prev = prevBoardRef.current;
+    if (socket && prev) socket.emit("board:leave", prev);
+
+    // join new room
+    if (socket) socket.emit("board:join", boardId);
+    prevBoardRef.current = boardId;
+
     setSelectedBoardId(boardId);
     try {
       const res = await api.get(`/tasks/board/${boardId}`);
@@ -45,33 +60,25 @@ export default function Dashboard() {
 
   // --- Socket listeners (realtime)
   useEffect(() => {
-    const socket = io(SOCKET_URL, { transports: ["websocket"] });
+    const s = io(SOCKET_URL, { transports: ["websocket"] });
+    setSocket(s);
 
-    socket.on("taskCreated", (t) => {
-      // ne garder que les tasks du board affiché
-      if (t.board_id !== selectedBoardId) return;
-
-      // déduplication (évite les doublons)
-      setTasks((prev) => {
-        if (prev.some((x) => x.id === t.id)) return prev;
-        return [...prev, t];
-      });
+    // listeners
+    s.on("taskCreated", (t) => {
+      setTasks((prev) => (prev.some((x) => x.id === t.id) ? prev : [...prev, t]));
     });
 
-    socket.on("taskUpdated", (t) => {
-      // si tu veux filtrer strict par board, garde cette ligne :
-      if (selectedBoardId && t.board_id !== selectedBoardId) return;
-
+    s.on("taskUpdated", (t) => {
       setTasks((prev) => prev.map((x) => (x.id === t.id ? { ...x, ...t } : x)));
     });
 
-    socket.on("taskDeleted", ({ id, board_id }) => {
-      if (board_id !== selectedBoardId) return;
+    s.on("taskDeleted", ({ id }) => {
       setTasks((prev) => prev.filter((x) => x.id !== id));
     });
 
-    return () => socket.disconnect();
-  }, [selectedBoardId]);
+    return () => s.disconnect();
+  }, []);
+
 
   // --- Derived columns (sorted by position)
   const byStatus = useMemo(() => {
@@ -182,8 +189,10 @@ export default function Dashboard() {
       (t) => t.status === targetStatus && t.id !== taskId
     ).length;
 
-    if (activeTask.status === targetStatus && activeTask.position === newPosition)
-      return;
+    if (activeTask.status === targetStatus) {
+      const endPos = tasks.filter((t) => t.status === targetStatus && t.id !== taskId).length;
+      if (activeTask.position === endPos) return;
+    }
 
     // optimistic UI
     const previous = tasks;
@@ -205,7 +214,7 @@ export default function Dashboard() {
   };
 
   const logout = () => {
-    localStorage.removeItem("token");
+    sessionStorage.removeItem("token");
     window.location.href = "/";
   };
 
@@ -228,10 +237,11 @@ export default function Dashboard() {
             Sélectionne un board, puis ajoute/modifie tes tâches.
           </div>
         </div>
-        <div style={{ display: "flex", gap: 10 }}></div>
+        <div style={{ display: "flex", gap: 10 }}>
           <button className="btn btn-secondary" style={{ width: "auto" }} onClick={logout}>
                 Logout
           </button>
+        </div>
       </div>
 
       {/* Create board */}
