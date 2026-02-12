@@ -218,6 +218,29 @@ export default function Dashboard() {
     window.location.href = "/";
   };
 
+  const deleteBoard = async () => {
+    if (!selectedBoardId) return;
+
+    const b = boards.find((x) => x.id === selectedBoardId);
+    const ok = window.confirm(`Supprimer le board "${b?.name}" ?\nToutes les tâches seront supprimées.`);
+    if (!ok) return;
+
+    try {
+      await api.delete(`/boards/${selectedBoardId}`);
+
+      // UI update
+      setBoards((prev) => prev.filter((x) => x.id !== selectedBoardId));
+      setSelectedBoardId(null);
+      setTasks([]);
+      setShowCreateTask(false);
+      setEditingTask(null);
+    } catch (e) {
+      console.error(e);
+      alert(e?.response?.data?.message || "Impossible de supprimer le board");
+    }
+  };
+
+
   return (
     <div style={{ padding: 20 }}>
       {/* Header */}
@@ -276,7 +299,15 @@ export default function Dashboard() {
           </button>
         ))}
       </div>
-
+      {selectedBoardId && (
+        <button
+          className="btn btn-secondary"
+          style={{ width: "auto" }}
+          onClick={deleteBoard}
+        >
+          🗑️ Supprimer board
+        </button>
+      )}
       {!selectedBoardId ? (
         <div style={{ opacity: 0.75 }}>Choisis un board pour voir les tâches.</div>
       ) : (
