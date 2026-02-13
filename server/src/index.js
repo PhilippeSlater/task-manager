@@ -5,6 +5,9 @@ const pool = require("./config/db");
 const http = require("http");
 const { Server } = require("socket.io");
 
+const rateLimit = require("express-rate-limit");
+const helmet = require("helmet");
+
 const auth = require("./middleware/auth");
 const authRoutes = require("./routes/auth");
 
@@ -44,6 +47,7 @@ io.on("connection", (socket) => {
   });
 });
 
+app.use(helmet());
 app.use(express.json());
 app.use(cors({
   origin: [
@@ -54,6 +58,13 @@ app.use(cors({
   credentials: true,
 }));
 
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+});
+
+// Limit the resquest rate to avoid brute force
+app.use("/auth", authLimiter);
 app.use("/auth", authRoutes);
 app.use("/boards", auth, require("./routes/boards"));
 app.use("/tasks", auth, require("./routes/tasks"));
@@ -64,6 +75,11 @@ server.listen(PORT, () => {
 
 app.get("/", (req, res) => {
   res.send("API running");
+});
+
+// Add simple health check
+app.get("/health", async (_, res) => {
+  res.json({ status: "ok", time: new Date() });
 });
 
 // Test connexion DB
