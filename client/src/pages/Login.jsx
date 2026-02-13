@@ -14,6 +14,9 @@ export default function Login() {
     setError("");
 
     try {
+      if (!email || !password) {
+        return res.status(400).json({ message: "Invalid input" });
+      }
       const res = await api.post("/auth/login", { email, password });
       login(res.data.token);
       window.location.href = "/dashboard";

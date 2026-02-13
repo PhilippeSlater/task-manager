@@ -87,3 +87,16 @@ Backend: Web Service (root: server)
 Frontend: Static Site (root: client)
 SPA rewrite: /* -> /index.html
 VITE_API_URL du frontend pointe vers l’URL backend Render
+
+---
+---
+
+## What I learned
+
+- JWT authentication and protected REST APIs
+- Real-time collaboration with Socket.io rooms
+- Docker multi-service setup
+- CI pipelines with GitHub Actions
+- Cloud deployment on Render
+- PostgreSQL relational modeling
+- Optimistic UI updates

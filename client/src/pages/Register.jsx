@@ -14,6 +14,9 @@ export default function Register() {
     setError("");
 
     try {
+      if (!email || !password) {
+        return res.status(400).json({ message: "Invalid input" });
+      }
       await api.post("/auth/register", { email, password });
       //Needed to get the Token
       const loginRes = await api.post("/auth/login", { email, password });
