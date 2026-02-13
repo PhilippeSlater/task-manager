@@ -1,8 +1,8 @@
+![CI](https://github.com/PhilippeSlater/task-manager/actions/workflows/ci.yml/badge.svg)
 # 🚀 Task Manager – Collaborative Kanban App
 
 Application web moderne de gestion de tâches collaborative (type Trello simplifié) avec authentification sécurisée, mises à jour en temps réel et déploiement cloud automatisé.
 
-🔗 Live Demo: (ajouter lien après déploiement)
 
 ---
 
@@ -42,3 +42,48 @@ Application web moderne de gestion de tâches collaborative (type Trello simplif
 
 ---
 
+# Local setup
+
+## Backend
+```bash
+cd server
+npm install
+cp .env.example .env
+npm run dev
+```
+
+## Frontend
+```bash
+cd client
+npm install
+npm run dev
+```
+
+## Docker (full stack)
+environment : VITE_API_URL = http://localhost:5000
+```bash
+docker compose up --build
+```
+Frontend: http://localhost:3000
+Backend: http://localhost:5000
+
+## Environment variables
+
+server/.env
+- DATABASE_URL: URL Postgres (Supabase)
+- JWT_SECRET: secret JWT
+- FRONTEND_URL: URL du frontend (pour CORS)
+
+---
+
+## CI (GitHub Actions)
+
+Le pipeline CI build le frontend et vérifie l’installation des dépendances server/client à chaque push / PR.
+
+--
+
+## Deploy (Render)
+Backend: Web Service (root: server)
+Frontend: Static Site (root: client)
+SPA rewrite: /* -> /index.html
+VITE_API_URL du frontend pointe vers l’URL backend Render
