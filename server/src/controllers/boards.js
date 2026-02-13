@@ -28,7 +28,7 @@ exports.createBoard = async (req, res) => {
     );
     const newTask = result.rows[0];
     const io = req.app.get("io");
-    io.emit("boardCreated", newTask);
+    if (io) io.emit("boardCreated", newTask);
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -52,7 +52,7 @@ exports.deleteBoard = async (req, res) => {
 
     const deleted = result.rows[0];
     const io = req.app.get("io");
-    io.emit("boardDeleted", { id: deleted.id, name: deleted.name });
+    if (io) io.emit("boardDeleted", { id: deleted.id, name: deleted.name });
 
     res.json({ message: "Deleted" });
   } catch (err) {

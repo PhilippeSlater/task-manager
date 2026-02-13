@@ -4,10 +4,9 @@ const cors = require("cors");
 const pool = require("./config/db");
 const http = require("http");
 const { Server } = require("socket.io");
-
+const app = require("./app");
 const rateLimit = require("express-rate-limit");
 const helmet = require("helmet");
-
 const auth = require("./middleware/auth");
 const authRoutes = require("./routes/auth");
 
@@ -15,18 +14,24 @@ const app = express();
 const PORT = 5000;
 
 const server = http.createServer(app);
-const io = new Server(server, {
+
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  process.env.FRONTEND_URL,
+].filter(Boolean);
+
+const io = new Server(httpServer, {
   cors: {
-    origin: [
-      "http://localhost:5173",
-      "http://localhost:3000",
-      "https://task-manager-1-9tjt.onrender.com",
-    ],
+    origin: allowedOrigins,
     methods: ["GET", "POST", "PATCH", "DELETE"],
+    credentials: true,
   },
+  transports: ["websocket", "polling"],
 });
 
 app.set("io", io);
+
 io.on("connection", (socket) => {
   console.log("socket connected", socket.id);
 
@@ -50,11 +55,7 @@ io.on("connection", (socket) => {
 app.use(helmet());
 app.use(express.json());
 app.use(cors({
-  origin: [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "https://task-manager-1-9tjt.onrender.com"
-  ],
+  origin: allowedOrigins,
   credentials: true,
 }));
 

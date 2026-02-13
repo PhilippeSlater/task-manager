@@ -89,6 +89,14 @@ SPA rewrite: /* -> /index.html
 VITE_API_URL du frontend pointe vers l’URL backend Render
 
 ---
+
+## Testing (server)
+```bash
+cd server
+docker compose -f docker-compose.test.yml up -d
+npm test
+```
+---
 ---
 
 ## What I learned
