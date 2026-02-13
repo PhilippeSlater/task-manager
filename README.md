@@ -114,4 +114,4 @@ npm test
 [ ] Allow invite to a board
 [ ] Allow role option : Owner, admin (create column, task, ...) and member (add info into a task)
 [ ] Allow member assign to a task
-[ ] Add BD scripts
+[ ] Add final BD scripts
