@@ -4,7 +4,6 @@ const cors = require("cors");
 const pool = require("./config/db");
 const http = require("http");
 const { Server } = require("socket.io");
-const app = require("./app");
 const rateLimit = require("express-rate-limit");
 const helmet = require("helmet");
 const auth = require("./middleware/auth");
@@ -21,7 +20,7 @@ const allowedOrigins = [
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 
-const io = new Server(httpServer, {
+const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
     methods: ["GET", "POST", "PATCH", "DELETE"],
