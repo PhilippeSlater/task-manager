@@ -22,9 +22,16 @@ export default function Dashboard() {
   const [editingTask, setEditingTask] = useState(null);
 
   const [socket, setSocket] = useState(null);
+
+  const [loadingBoards, setLoadingBoards] = useState(true);
+  const [loadingTasks, setLoadingTasks] = useState(false);
+
+  const [toast, setToast] = useState(null);
+
   const prevBoardRef = useRef(null);
   // --- Load boards on mount
   useEffect(() => {
+    setLoadingBoards(true);
     api
       .get("/boards")
       .then((res) => setBoards(res.data))
@@ -32,14 +39,15 @@ export default function Dashboard() {
         // token invalide / expiré
         localStorage.removeItem("token");
         window.location.href = "/login";
-      });
+      })
+      .finally(() => setLoadingBoards(false));
   }, []);
 
   // --- Load tasks for a board
   const loadTasks = async (boardId) => {
     setShowCreateTask(false);
     setEditingTask(null);
-
+    setLoadingTasks(true);
     // leave old room
     const prev = prevBoardRef.current;
     if (socket && prev) socket.emit("board:leave", prev);
@@ -49,15 +57,22 @@ export default function Dashboard() {
     prevBoardRef.current = boardId;
 
     setSelectedBoardId(boardId);
+    setTasks([]);
     try {
       const res = await api.get(`/tasks/board/${boardId}`);
       setTasks(res.data);
     } catch (e) {
       console.error(e);
-      alert("Impossible de charger les tâches");
+      showToast("Impossible de charger les tâches", "error");
+    }
+    finally {
+      setLoadingTasks(false);
     }
   };
-
+  const showToast = (message, type = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 2500);
+  };
   // --- Socket listeners (realtime)
   useEffect(() => {
     const s = io(SOCKET_URL, { transports: ["websocket", "polling"] });
@@ -103,14 +118,14 @@ export default function Dashboard() {
       setNewBoardName("");
     } catch (e) {
       console.error(e);
-      alert("Impossible de créer le board");
+      showToast("Impossible de créer le board", "error");
     }
   };
 
   // --- Create task (modal)
   const createTask = async ({ title, description, status }) => {
     if (!selectedBoardId) {
-      alert("Choisis un board d’abord");
+      showToast("Choisis un board d’abord", "error");
       return;
     }
 
@@ -128,7 +143,7 @@ export default function Dashboard() {
       setShowCreateTask(false);
     } catch (e) {
       console.error(e);
-      alert("Impossible de créer la tâche");
+      showToast("Impossible de créer la tâche", "error");
     }
   };
 
@@ -145,7 +160,7 @@ export default function Dashboard() {
     } catch (e) {
       console.error(e);
       setTasks(previous);
-      alert("Impossible de sauvegarder la tâche");
+      showToast("Impossible de sauvegarder la tâche", "error");
     }
   };
 
@@ -161,7 +176,7 @@ export default function Dashboard() {
     } catch (e) {
       console.error(e);
       setTasks(previous);
-      alert("Impossible de supprimer la tâche");
+      showToast("Impossible de supprimer la tâche", "error");
     }
   };
 
@@ -281,7 +296,7 @@ export default function Dashboard() {
           + Créer board
         </button>
       </div>
-
+      {loadingBoards && <div style={{ opacity: 0.75 }}>Chargement des boards…</div>}
       {/* Boards list */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>
         {boards.map((b) => (
@@ -299,20 +314,20 @@ export default function Dashboard() {
           </button>
         ))}
       </div>
-      {selectedBoardId && (
-        <button
-          className="btn btn-secondary"
-          style={{ width: "auto" }}
-          onClick={deleteBoard}
-        >
-          🗑️ Supprimer board
-        </button>
-      )}
-      {!selectedBoardId ? (
-        <div style={{ opacity: 0.75 }}>Choisis un board pour voir les tâches.</div>
+      {loadingTasks ? (
+        <div style={{ opacity: 0.75 }}>Chargement des tâches…</div>
       ) : (
-        <DndContext collisionDetection={closestCorners} onDragEnd={onDragEnd}>
-          <div style={{ display: "flex", gap: 10 }}>
+        <div></div>
+      )}
+      {selectedBoardId && (
+        <div style={{ display: "flex", gap: 10 }}>
+            <button
+              className="btn btn-secondary"
+              style={{ width: "auto" }}
+              onClick={deleteBoard}
+            >
+              🗑️ Supprimer board
+            </button>
             <button
               className="btn btn-primary"
               style={{ width: "auto" }}
@@ -322,7 +337,13 @@ export default function Dashboard() {
             >
               + Task
             </button>
-          </div>
+        </div>    
+      )}
+      {!selectedBoardId ? (
+        <div style={{ opacity: 0.75 }}>Choisis un board pour voir les tâches.</div>
+      ) : (
+        <DndContext collisionDetection={closestCorners} onDragEnd={onDragEnd}>
+          
           <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
             <TaskColumn
               id="todo"
@@ -361,6 +382,25 @@ export default function Dashboard() {
           onSave={saveTask}
           onDelete={deleteTask}
         />
+      )}
+      {toast && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 20,
+            right: 20,
+            padding: "10px 14px",
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,0.15)",
+            background: toast.type === "error" ? "rgba(255, 70, 70, 0.18)" : "rgba(70, 180, 120, 0.18)",
+            color: "rgba(255,255,255,0.92)",
+            backdropFilter: "blur(10px)",
+            zIndex: 1000,
+            maxWidth: 320,
+          }}
+        >
+          {toast.message}
+        </div>
       )}
     </div>
   );
