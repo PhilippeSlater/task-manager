@@ -108,3 +108,10 @@ npm test
 - Cloud deployment on Render
 - PostgreSQL relational modeling
 - Optimistic UI updates
+
+## TODO
+[ ] Allow dynamic creation of column
+[ ] Allow invite to a board
+[ ] Allow role option : Owner, admin (create column, task, ...) and member (add info into a task)
+[ ] Allow member assign to a task
+[ ] Add final BD scripts
