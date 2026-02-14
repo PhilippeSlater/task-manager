@@ -90,23 +90,18 @@ exports.updateColumn = async (req, res) => {
     const ownerId = Number(req.user.id);
     const boardId = Number(req.params.boardId);
     const columnId = Number(req.params.columnId);
-
-    if (!Number.isInteger(boardId) || !Number.isInteger(columnId)) {
-      return res.status(400).json({ message: "Invalid id" });
-    }
+    if (!Number.isInteger(boardId)) return res.status(400).json({ message: "Invalid board id" });
+    if (!Number.isInteger(columnId)) return res.status(400).json({ message: "Invalid column id" });
 
     const ok = await assertBoardOwnership(boardId, ownerId);
     if (!ok) return res.status(404).json({ message: "Board not found" });
 
-    const okCol = await assertColumnInBoard(columnId, boardId);
-    if (!okCol) return res.status(404).json({ message: "Column not found" });
-
     const { name, position } = req.body || {};
-    const patchName = name !== undefined ? String(name).trim() : null;
+    const patchName = typeof name === "string" ? name.trim() : null;
     const patchPos = Number.isInteger(position) ? position : null;
 
-    if (patchName !== null && patchName.length === 0) {
-      return res.status(400).json({ message: "name cannot be empty" });
+    if (patchName === null && patchPos === null) {
+      return res.status(400).json({ message: "Nothing to update" });
     }
 
     const r = await pool.query(
@@ -117,6 +112,8 @@ exports.updateColumn = async (req, res) => {
        RETURNING id, board_id, name, position`,
       [patchName, patchPos, columnId, boardId]
     );
+
+    if (!r.rows.length) return res.status(404).json({ message: "Column not found" });
 
     const updated = r.rows[0];
 
@@ -137,35 +134,93 @@ exports.deleteColumn = async (req, res) => {
     const boardId = Number(req.params.boardId);
     const columnId = Number(req.params.columnId);
 
-    if (!Number.isInteger(boardId) || !Number.isInteger(columnId)) {
-      return res.status(400).json({ message: "Invalid id" });
-    }
+    if (!Number.isInteger(boardId)) return res.status(400).json({ message: "Invalid board id" });
+    if (!Number.isInteger(columnId)) return res.status(400).json({ message: "Invalid column id" });
 
     const ok = await assertBoardOwnership(boardId, ownerId);
     if (!ok) return res.status(404).json({ message: "Board not found" });
 
-    const okCol = await assertColumnInBoard(columnId, boardId);
-    if (!okCol) return res.status(404).json({ message: "Column not found" });
-
-    // Rule: refuse delete if tasks exist in that column
-    const t = await pool.query(
-      "SELECT 1 FROM tasks WHERE board_id=$1 AND column_id=$2 LIMIT 1",
-      [boardId, columnId]
+    // si tu veux empêcher delete si tasks existent -> check ici
+    const r = await pool.query(
+      "DELETE FROM columns WHERE id=$1 AND board_id=$2 RETURNING id, board_id",
+      [columnId, boardId]
     );
-    if (t.rows.length) {
-      return res.status(409).json({
-        message: "Column not empty. Move/delete tasks before deleting this column.",
-      });
-    }
 
-    await pool.query("DELETE FROM columns WHERE id=$1 AND board_id=$2", [columnId, boardId]);
+    if (!r.rows.length) return res.status(404).json({ message: "Column not found" });
+
+    const deleted = r.rows[0];
 
     const io = req.app.get("io");
-    if (io) io.to(`board:${boardId}`).emit("columnDeleted", { id: columnId, board_id: boardId });
+    if (io) io.to(`board:${boardId}`).emit("columnDeleted", { id: deleted.id, board_id: deleted.board_id });
 
     res.json({ message: "Deleted" });
   } catch (err) {
     console.error("COLUMNS deleteColumn:", err);
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+exports.reorderColumns = async (req, res) => {
+  const ownerId = Number(req.user.id);
+  const boardId = Number(req.params.boardId);
+  const { columnIds } = req.body || {};
+  
+  if (!Number.isInteger(boardId)) return res.status(400).json({ message: "Invalid board id" });
+  if (!Array.isArray(columnIds) || columnIds.length === 0) {
+    return res.status(400).json({ message: "columnIds required" });
+  }
+
+  const ids = columnIds.map(Number);
+  if (ids.some((x) => !Number.isInteger(x))) {
+    return res.status(400).json({ message: "Invalid column id" });
+  }
+
+  const ok = await assertBoardOwnership(boardId, ownerId);
+  if (!ok) return res.status(404).json({ message: "Board not found" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // (optionnel mais recommandé) valider que toutes les colonnes appartiennent au board
+    const check = await client.query(
+      `SELECT id FROM columns WHERE board_id=$1 AND id = ANY($2::int[])`,
+      [boardId, ids]
+    );
+    if (check.rows.length !== ids.length) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ message: "Some columns do not belong to this board" });
+    }
+
+    // Phase 1: déplacer hors plage pour éviter uq(board_id, position)
+    await client.query(
+      `UPDATE columns
+       SET position = position + 1000
+       WHERE board_id=$1`,
+      [boardId]
+    );
+
+    // Phase 2: appliquer l'ordre demandé
+    for (let i = 0; i < ids.length; i++) {
+      await client.query(
+        `UPDATE columns
+         SET position=$1
+         WHERE board_id=$2 AND id=$3`,
+        [i, boardId, ids[i]]
+      );
+    }
+
+    await client.query("COMMIT");
+
+    const io = req.app.get("io");
+    if (io) io.to(`board:${boardId}`).emit("columnsReordered", { board_id: boardId, columnIds: ids });
+
+    return res.json({ message: "Reordered" });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("COLUMNS reorderColumns:", err);
+    return res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
   }
 };

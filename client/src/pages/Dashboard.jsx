@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { DndContext, closestCorners } from "@dnd-kit/core";
 import { arrayMove } from "@dnd-kit/sortable";
+import { SortableContext, horizontalListSortingStrategy } from "@dnd-kit/sortable";
 import api from "../services/api";
 import TaskColumn from "../components/TaskColumn";
 import TaskCreateModal from "../components/TaskCreateModal";
@@ -101,6 +102,19 @@ export default function Dashboard() {
       setTasks((prev) => prev.filter((t) => t.column_id !== id));
     });
 
+    s.on("columnsReordered", ({ board_id, columnIds }) => {
+      if (Number(board_id) !== Number(prevBoardRef.current)) return;
+
+      setColumns((prev) => {
+        const map = new Map(prev.map((c) => [c.id, c]));
+        return columnIds
+          .map((id, idx) => {
+            const c = map.get(id);
+            return c ? { ...c, position: idx } : null;
+          })
+          .filter(Boolean);
+      });
+    });
 
     return () => {
       s.off("taskCreated");
@@ -109,6 +123,7 @@ export default function Dashboard() {
       s.off("columnCreated");
       s.off("columnUpdated");
       s.off("columnDeleted");
+      s.off("columnsReordered");
       s.disconnect();
     };
   }, []);
@@ -264,6 +279,38 @@ export default function Dashboard() {
 
     const activeId = String(active.id);
     const overId = String(over.id);
+
+    if (activeId.startsWith("col:") && overId.startsWith("col:")) {
+      const activeColId = Number(activeId.replace("col:", ""));
+      const overColId = Number(overId.replace("col:", ""));
+
+      const oldIndex = columnsSorted.findIndex((c) => c.id === activeColId);
+      const newIndex = columnsSorted.findIndex((c) => c.id === overColId);
+      if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return;
+
+      const previous = columns;
+
+      // ordre optimiste (UI)
+      const moved = arrayMove(columnsSorted, oldIndex, newIndex).map((c, idx) => ({
+        ...c,
+        position: idx,
+      }));
+
+      setColumns(moved);
+
+      try {
+        await api.patch(`/boards/${selectedBoardId}/columns/reorder`, {
+          columnIds: moved.map((c) => c.id),
+        });
+      } catch (e) {
+        console.error(e);
+        setColumns(previous);
+        showToast("Erreur reorder colonnes", "error");
+      }
+
+      return;
+    }
+
 
     if (!activeId.startsWith("task:")) return;
 
@@ -551,19 +598,23 @@ export default function Dashboard() {
         </div>
       ) : (
         <DndContext collisionDetection={closestCorners} onDragEnd={onDragEnd}>
-          <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
-            {columnsSorted.map((col) => (
-              <TaskColumn
-                key={col.id}
-                id={`col:${col.id}`}  
-                column={col}
-                tasks={tasksByColumnId.get(col.id) || []}
-                onOpenTask={(t) => setEditingTask(t)}
-                onRenameColumn={renameColumn}
-                onDeleteColumn={removeColumn}
-              />
-            ))}
-          </div>
+          <SortableContext
+            items={columnsSorted.map((c) => `col:${c.id}`)}
+            strategy={horizontalListSortingStrategy}
+          >
+            <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
+              {columnsSorted.map((col) => (
+                <TaskColumn
+                  key={col.id}
+                  column={col}
+                  tasks={tasksByColumnId.get(col.id) || []}
+                  onOpenTask={(t) => setEditingTask(t)}
+                  onRenameColumn={renameColumn}
+                  onDeleteColumn={removeColumn}
+                />
+              ))}
+            </div>
+          </SortableContext>
         </DndContext>
       )}
 

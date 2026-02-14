@@ -65,7 +65,7 @@ exports.createTask = async (req, res) => {
 
     res.status(201).json(newTask); 
   } catch (err) {
-    console.error("TASKS createTask:", err);
+    console.log(err);
     res.status(500).json({ message: "Server error" });
   }
 };

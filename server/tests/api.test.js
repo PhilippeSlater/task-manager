@@ -62,6 +62,7 @@ describe("API integration", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({
         board_id: boardId,
+        column_id: column_id,
         title: "Task 1",
         description: "Hello",
         status: "todo",

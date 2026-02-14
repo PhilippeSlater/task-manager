@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import TaskCard from "./TaskCard";
 
 export default function TaskColumn({
@@ -11,13 +11,25 @@ export default function TaskColumn({
   onRenameColumn,
   onDeleteColumn,
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id });
-
+  const colId = `col:${column.id}`;
+  const { setNodeRef: setDroppableRef, isOver } = useDroppable({ id: colId });
+  const {
+      setNodeRef: setSortableRef,
+      attributes,
+      listeners,
+      transform,
+      transition,
+      isDragging,
+    } = useSortable({ id: colId });
   const [menuOpen, setMenuOpen] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState(column?.name || "");
   const inputRef = useRef(null);
 
+  const setNodeRef = (node) => {
+    setSortableRef(node);
+    setDroppableRef(node);
+  };
   useEffect(() => {
     setName(column?.name || "");
   }, [column?.name]);
@@ -88,7 +100,24 @@ export default function TaskColumn({
             />
           )}
         </div>
-
+          <div
+          {...attributes}
+          {...listeners}
+          title="Déplacer la colonne"
+          style={{
+            display: "inline-flex",
+            padding: "6px 10px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.12)",
+            background: "rgba(0,0,0,0.20)",
+            cursor: "grab",
+            userSelect: "none",
+            opacity: 0.85,
+            fontSize: 13,
+          }}
+        >
+          ⠿
+        </div>
         {/* Menu button */}
         <button
           className="btn btn-secondary"

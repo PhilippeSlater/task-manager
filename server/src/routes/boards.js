@@ -9,7 +9,9 @@ router.delete("/:id", controller.deleteBoard);
 // columns inside a board
 router.get("/:boardId/columns", columns.listColumns);
 router.post("/:boardId/columns", columns.createColumn);
+router.patch("/:boardId/columns/reorder", columns.reorderColumns);
 router.patch("/:boardId/columns/:columnId", columns.updateColumn);
 router.delete("/:boardId/columns/:columnId", columns.deleteColumn);
+
 
 module.exports = router;
