@@ -1,7 +1,8 @@
-import { useSortable } from "@dnd-kit/sortable";
+import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 
 export default function TaskCard({ task, onOpen }) {
+  const dragId = `task:${task.id}`;
   const {
     attributes,
     listeners,
@@ -9,7 +10,7 @@ export default function TaskCard({ task, onOpen }) {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: task.id });
+  } = useDraggable({ id: dragId });
 
   const style = {
     transform: CSS.Transform.toString(transform),

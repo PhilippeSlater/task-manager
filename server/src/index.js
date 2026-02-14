@@ -32,22 +32,16 @@ const io = new Server(server, {
 app.set("io", io);
 
 io.on("connection", (socket) => {
-  console.log("socket connected", socket.id);
-
   socket.on("board:join", (boardId) => {
-    const room = `board-${boardId}`;
-    socket.join(room);
-    // console.log(`${socket.id} joined ${room}`);
+    const id = Number(boardId);
+    if (!Number.isInteger(id)) return;
+    socket.join(`board:${id}`);
   });
 
   socket.on("board:leave", (boardId) => {
-    const room = `board-${boardId}`;
-    socket.leave(room);
-    // console.log(`${socket.id} left ${room}`);
-  });
-
-  socket.on("disconnect", () => {
-    // console.log("socket disconnected", socket.id);
+    const id = Number(boardId);
+    if (!Number.isInteger(id)) return;
+    socket.leave(`board:${id}`);
   });
 });
 
@@ -68,6 +62,7 @@ app.use("/auth", authLimiter);
 app.use("/auth", authRoutes);
 app.use("/boards", auth, require("./routes/boards"));
 app.use("/tasks", auth, require("./routes/tasks"));
+app.use("/columns", auth, require("./routes/columns"));
 
 server.listen(PORT, () => {
   console.log(`Server running on ${PORT}`);

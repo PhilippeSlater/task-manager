@@ -19,7 +19,10 @@ exports.listTasksByBoard = async (req, res) => {
     if (!ok) return res.status(404).json({ message: "Board not found" });
 
     const result = await pool.query(
-      "SELECT id,title,description,status,position,created_at FROM tasks WHERE board_id=$1 ORDER BY status, position, id",
+      `SELECT id, board_id, column_id, title, description, position, created_at
+       FROM tasks
+       WHERE board_id=$1
+       ORDER BY column_id NULLS FIRST, position ASC`,
       [boardId]
     );
 
@@ -33,33 +36,36 @@ exports.listTasksByBoard = async (req, res) => {
 exports.createTask = async (req, res) => {
   try {
     const ownerId = req.user.id;
-    const { board_id, title, description, status, position } = req.body || {};
+    const { board_id, column_id, title, description, position } = req.body || {};
+
+    const columnId = Number(column_id);
+    if (!Number.isInteger(columnId)) return res.status(400).json({ message: "column_id required" });
 
     if (!board_id || !title)
       return res.status(400).json({ message: "board_id and title required" });
 
-    const ok = await assertBoardOwnership(Number(board_id), ownerId);
-    if (!ok) return res.status(404).json({ message: "Board not found" });
+    const okBoard = await assertBoardOwnership(Number(board_id), ownerId);
+    if (!okBoard) return res.status(404).json({ message: "Board not found" });
+
+    const okCol = await pool.query("SELECT 1 FROM columns WHERE id=$1 AND board_id=$2", [columnId, board_id]);
+    if (!okCol.rows.length) return res.status(400).json({ message: "Invalid column_id for this board" });
+
+    const pos = Number.isInteger(position) ? position : 0;
 
     const result = await pool.query(
-      `INSERT INTO tasks (board_id, title, description, status, position, created_by)
+      `INSERT INTO tasks (board_id, column_id, title, description, position, created_by)
        VALUES ($1,$2,$3,$4,$5,$6)
-       RETURNING id, board_id, title, description, status, position, created_at`,
-      [
-        board_id,
-        title,
-        description || null,
-        status || "todo",
-        Number.isInteger(position) ? position : 0,
-        ownerId,
-      ]
+       RETURNING id, board_id, column_id, title, description, position, created_at`,
+      [board_id, columnId, title.trim(), description || null, pos, ownerId]
     );
+
     const newTask = result.rows[0];
     const io = req.app.get("io");
-    if (io) io.to(`board-${newTask.board_id}`).emit("taskCreated", newTask);
+    if (io) io.to(`board:${newTask.board_id}`).emit("taskCreated", newTask);
 
     res.status(201).json(newTask); 
   } catch (err) {
+    console.error("TASKS createTask:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
@@ -69,26 +75,44 @@ exports.updateTask = async (req, res) => {
   try {
     const ownerId = req.user.id;
     const taskId = Number(req.params.id);
-    const { title, description, status, position } = req.body || {};
+    const { title, description, column_id, position } = req.body || {};
+
+    const t0 = await pool.query(
+      `SELECT t.id, t.board_id
+       FROM tasks t
+       JOIN boards b ON b.id=t.board_id
+       WHERE t.id=$1 AND b.owner_id=$2`,
+      [taskId, ownerId]
+    );
+    if (!t0.rows.length) return res.status(404).json({ message: "Task not found" });
+
+    const boardId = t0.rows[0].board_id;
+
+    let colId = null;
+    if (column_id !== undefined) {
+      const cid = Number(column_id);
+      if (!Number.isInteger(cid)) return res.status(400).json({ message: "Invalid column_id" });
+
+      const okCol = await pool.query("SELECT 1 FROM columns WHERE id=$1 AND board_id=$2", [cid, boardId]);
+      if (!okCol.rows.length) return res.status(400).json({ message: "Invalid column_id for this board" });
+
+      colId = cid;
+    }
+
+    const patchTitle = typeof title === "string" ? title.trim() : null;
+    const patchDesc = typeof description === "string" ? description : null;
+    const patchPos = Number.isInteger(position) ? position : null;
 
     // Make sur its the owner
     const result = await pool.query(
-      `UPDATE tasks t
-       SET title = COALESCE($1, t.title),
-           description = COALESCE($2, t.description),
-           status = COALESCE($3, t.status),
-           position = COALESCE($4, t.position)
-       FROM boards b
-       WHERE t.id=$5 AND t.board_id=b.id AND b.owner_id=$6
-       RETURNING t.id, t.board_id, t.title, t.description, t.status, t.position, t.created_at`,
-      [
-        title ?? null,
-        description ?? null,
-        status ?? null,
-        position ?? null,
-        taskId,
-        ownerId,
-      ]
+      `UPDATE tasks
+       SET title = COALESCE($1, title),
+           description = COALESCE($2, description),
+           column_id = COALESCE($3, column_id),
+           position = COALESCE($4, position)
+       WHERE id=$5
+       RETURNING id, board_id, column_id, title, description, position, created_at, updated_at`,
+      [patchTitle || null, patchDesc, colId, patchPos, taskId]
     );
 
     if (!result.rows.length)
@@ -96,7 +120,7 @@ exports.updateTask = async (req, res) => {
 
     const updatedTask = result.rows[0];
     const io = req.app.get("io")
-    if (io) io.to(`board-${updatedTask.board_id}`).emit("taskUpdated", updatedTask);
+    if (io) io.to(`board:${updatedTask.board_id}`).emit("taskUpdated", updatedTask);
 
     res.json(updatedTask);
   } catch {
@@ -122,7 +146,7 @@ exports.deleteTask = async (req, res) => {
 
     const deleted = result.rows[0];
     const io = req.app.get("io");
-    if (io) io.to(`board-${deleted.board_id}`).emit("taskDeleted", { id: deleted.id, board_id: deleted.board_id });
+    if (io) io.to(`board:${deleted.board_id}`).emit("taskDeleted", { id: deleted.id, board_id: deleted.board_id });
 
     res.json({ message: "Deleted" });
   } catch {

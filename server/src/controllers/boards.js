@@ -22,16 +22,26 @@ exports.createBoard = async (req, res) => {
     const { name } = req.body || {};
     if (!name) return res.status(400).json({ message: "name required" });
 
-    const result = await pool.query(
-      "INSERT INTO boards (name, owner_id) VALUES ($1,$2) RETURNING id,name,created_at",
+    const board = await pool.query(
+      "INSERT INTO boards (name, owner_id) VALUES ($1,$2) RETURNING *",
       [name, ownerId]
     );
-    const newTask = result.rows[0];
+
+    const boardId = board.rows[0].id;
+    // Create initial columns
+    const result = await pool.query(
+      `INSERT INTO columns (board_id, name, position)
+      VALUES ($1,'À faire',0), ($1,'En cours',1), ($1,'Terminé',2)`,
+      [boardId]
+    );
+
+    const newTask = board.rows[0];
     const io = req.app.get("io");
     if (io) io.emit("boardCreated", newTask);
 
-    res.status(201).json(result.rows[0]);
+    res.status(201).json(board.rows[0]);
   } catch (err) {
+    console.log(err);
     res.status(500).json({ message: "Server error" });
   }
 };

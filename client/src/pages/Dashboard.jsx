@@ -1,5 +1,5 @@
 // client/src/pages/Dashboard.jsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { DndContext, closestCorners } from "@dnd-kit/core";
 
@@ -8,13 +8,13 @@ import TaskColumn from "../components/TaskColumn";
 import TaskCreateModal from "../components/TaskCreateModal";
 import TaskEditModal from "../components/TaskEditModal";
 
-import { useRef } from "react";
-
 const SOCKET_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 export default function Dashboard() {
   const [boards, setBoards] = useState([]);
   const [selectedBoardId, setSelectedBoardId] = useState(null);
+
+  const [columns, setColumns] = useState([]);
   const [tasks, setTasks] = useState([]);
 
   const [newBoardName, setNewBoardName] = useState("");
@@ -24,90 +24,161 @@ export default function Dashboard() {
   const [socket, setSocket] = useState(null);
 
   const [loadingBoards, setLoadingBoards] = useState(true);
-  const [loadingTasks, setLoadingTasks] = useState(false);
+  const [loadingBoardData, setLoadingBoardData] = useState(false);
 
   const [toast, setToast] = useState(null);
 
+  const [newColumnName, setNewColumnName] = useState("");
+  const [creatingColumn, setCreatingColumn] = useState(false);
+
   const prevBoardRef = useRef(null);
+
+  const showToast = (message, type = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 2500);
+  };
+
   // --- Load boards on mount
   useEffect(() => {
     setLoadingBoards(true);
     api
       .get("/boards")
-      .then((res) => setBoards(res.data))
+      .then((res) => {
+        setBoards(res.data);
+        const last = sessionStorage.getItem("lastBoardId");
+        const lastId = last ? Number(last) : null;
+
+        const exists = lastId && res.data.some(b => Number(b.id) === lastId);
+        if (exists) loadBoard(lastId);
+        else if (res.data.length) loadBoard(Number(res.data[0].id));
+      })
       .catch(() => {
-        // token invalide / expiré
-        localStorage.removeItem("token");
+        sessionStorage.removeItem("token");
         window.location.href = "/login";
       })
       .finally(() => setLoadingBoards(false));
   }, []);
 
-  // --- Load tasks for a board
-  const loadTasks = async (boardId) => {
-    setShowCreateTask(false);
-    setEditingTask(null);
-    setLoadingTasks(true);
-    // leave old room
-    const prev = prevBoardRef.current;
-    if (socket && prev) socket.emit("board:leave", prev);
-
-    // join new room
-    if (socket) socket.emit("board:join", boardId);
-    prevBoardRef.current = boardId;
-
-    setSelectedBoardId(boardId);
-    setTasks([]);
-    try {
-      const res = await api.get(`/tasks/board/${boardId}`);
-      setTasks(res.data);
-    } catch (e) {
-      console.error(e);
-      showToast("Impossible de charger les tâches", "error");
-    }
-    finally {
-      setLoadingTasks(false);
-    }
-  };
-  const showToast = (message, type = "success") => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 2500);
-  };
-  // --- Socket listeners (realtime)
+  // --- Socket init (once)
   useEffect(() => {
     const s = io(SOCKET_URL, { transports: ["websocket", "polling"] });
     setSocket(s);
 
-    // listeners
+    // TASK events (filter by current board)
     s.on("taskCreated", (t) => {
-      setTasks((prev) => (prev.some((x) => x.id === t.id) ? prev : [...prev, t]));
+      const nt = normalizeTask(t);
+      if (Number(nt.board_id) !== Number(prevBoardRef.current)) return;
+      setTasks((prev) => (prev.some((x) => x.id === nt.id) ? prev : [...prev, nt]));
     });
 
     s.on("taskUpdated", (t) => {
-      setTasks((prev) => prev.map((x) => (x.id === t.id ? { ...x, ...t } : x)));
+      const nt = normalizeTask(t);
+      if (Number(nt.board_id) !== Number(prevBoardRef.current)) return;
+      setTasks((prev) => prev.map((x) => (x.id === nt.id ? { ...x, ...nt } : x)));
     });
 
-    s.on("taskDeleted", ({ id }) => {
+    s.on("taskDeleted", ({ id, board_id }) => {
+      if (board_id !== prevBoardRef.current) return;
       setTasks((prev) => prev.filter((x) => x.id !== id));
+    });
+
+    // COLUMN events (optional; only if your backend emits them)
+    s.on("columnCreated", (c) => {
+      const nc = normalizeColumn(c);
+      if (nc.board_id !== prevBoardRef.current) return;
+      setColumns((prev) => (prev.some((x) => x.id === nc.id) ? prev : [...prev, nc]));
+    });
+
+    s.on("columnUpdated", (c) => {
+      const nc = normalizeColumn(c);
+      if (nc.board_id !== prevBoardRef.current) return;
+      setColumns((prev) => prev.map((x) => (x.id === nc.id ? { ...x, ...nc } : x)));
+    });
+
+    s.on("columnDeleted", ({ id, board_id }) => {
+      if (board_id !== prevBoardRef.current) return;
+      setColumns((prev) => prev.filter((x) => x.id !== id));
+      setTasks((prev) => prev.filter((t) => t.column_id !== id));
     });
 
     return () => s.disconnect();
   }, []);
 
+  const normalizeTask = (t) => ({
+    ...t,
+    id: Number(t.id),
+    board_id: Number(t.board_id),
+    column_id: Number(t.column_id),
+    position: Number(t.position ?? 0),
+  });
 
-  // --- Derived columns (sorted by position)
-  const byStatus = useMemo(() => {
-    const sort = (arr) =>
-      [...arr].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  const normalizeColumn = (c) => ({
+    ...c,
+    id: Number(c.id),
+    board_id: Number(c.board_id),
+    position: Number(c.position ?? 0),
+  });
 
-    return {
-      todo: sort(tasks.filter((t) => t.status === "todo")),
-      doing: sort(tasks.filter((t) => t.status === "doing")),
-      done: sort(tasks.filter((t) => t.status === "done")),
-    };
-  }, [tasks]);
+  // --- Load board: columns + tasks
+  const loadBoard = async (boardId) => {
+    const id = Number(boardId); 
+    if (!Number.isInteger(id)) return;
+    setShowCreateTask(false);
+    setEditingTask(null);
+    setLoadingBoardData(true);
 
-  // --- Create board (UI)
+    // leave old room / join new 
+    const prev = prevBoardRef.current;
+    if (socket && prev) socket.emit("board:leave", prev);
+    if (socket) socket.emit("board:join", boardId);
+
+    prevBoardRef.current = boardId;
+    setSelectedBoardId(boardId);
+
+    // clear UI while loading
+    setColumns([]);
+    setTasks([]);
+
+    try {
+      const [colsRes, tasksRes] = await Promise.all([
+        api.get(`/boards/${boardId}/columns`),
+        api.get(`/tasks/board/${boardId}`),
+      ]);
+
+      setColumns(colsRes.data.map(normalizeColumn));
+      setTasks(tasksRes.data.map(normalizeTask));
+      console.log("cols ids:", colsRes.data.map(c => [c.id, typeof c.id]));
+      console.log("tasks col:", tasksRes.data.map(t => [t.column_id, typeof t.column_id]));
+    } catch (e) {
+      console.error(e);
+      showToast("Impossible de charger le board (colonnes/tâches)", "error");
+    } finally {
+      setLoadingBoardData(false);
+      sessionStorage.setItem("lastBoardId", String(boardId));
+    }
+  };
+
+  // --- Derived: sorted columns
+  const columnsSorted = useMemo(() => {
+    return [...columns].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  }, [columns]);
+
+  // --- Derived: tasks grouped by column_id
+  const tasksByColumnId = useMemo(() => {
+    const map = new Map();
+    for (const c of columnsSorted) map.set(c.id, []);
+    for (const t of tasks) {
+      if (!map.has(t.column_id)) map.set(t.column_id, []);
+      map.get(t.column_id).push(t);
+    }
+    for (const [k, arr] of map.entries()) {
+      arr.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+      map.set(k, arr);
+    }
+    return map;
+  }, [tasks, columnsSorted]);
+
+  // --- Create board
   const createBoard = async () => {
     const name = newBoardName.trim();
     if (!name) return;
@@ -116,30 +187,31 @@ export default function Dashboard() {
       const res = await api.post("/boards", { name });
       setBoards((prev) => [res.data, ...prev]);
       setNewBoardName("");
+      showToast("Board créé");
     } catch (e) {
       console.error(e);
       showToast("Impossible de créer le board", "error");
     }
   };
 
-  // --- Create task (modal)
-  const createTask = async ({ title, description, status }) => {
-    if (!selectedBoardId) {
-      showToast("Choisis un board d’abord", "error");
-      return;
-    }
+  // --- Create task (modal) expects: { title, description, column_id }
+  const createTask = async ({ title, description, column_id }) => {
+    if (!selectedBoardId) return showToast("Choisis un board d’abord", "error");
+    const colId = Number(column_id);
+    if (!Number.isInteger(colId)) return showToast("Colonne invalide", "error");
 
     try {
-      const position = tasks.filter((t) => t.status === status).length;
+      const position = tasks.filter((t) => t.column_id === colId).length;
+
       await api.post("/tasks", {
         board_id: selectedBoardId,
+        column_id: colId,
         title,
         description,
-        status,
         position,
       });
 
-      // On laisse le socket "taskCreated" ajouter la tâche.
+      // Let socket add it (or you can refetch if you want)
       setShowCreateTask(false);
     } catch (e) {
       console.error(e);
@@ -149,13 +221,11 @@ export default function Dashboard() {
 
   // --- Save task edits (modal)
   const saveTask = async (id, patch) => {
-    // optimistic UI
     const previous = tasks;
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
 
     try {
       await api.patch(`/tasks/${id}`, patch);
-      // socket "taskUpdated" va aussi arriver, mais c’est ok
       setEditingTask(null);
     } catch (e) {
       console.error(e);
@@ -164,14 +234,13 @@ export default function Dashboard() {
     }
   };
 
-  // --- Delete task (modal)
+  // --- Delete task
   const deleteTask = async (id) => {
     const previous = tasks;
     setTasks((prev) => prev.filter((t) => t.id !== id));
 
     try {
       await api.delete(`/tasks/${id}`);
-      // socket "taskDeleted" va aussi arriver
       setEditingTask(null);
     } catch (e) {
       console.error(e);
@@ -180,56 +249,61 @@ export default function Dashboard() {
     }
   };
 
-  // --- Drag & drop
-  const onDragEnd = async (event) => {
-    const { active, over } = event;
+  const onDragEnd = async ({ active, over }) => {
     if (!over) return;
 
-    const taskId = active.id;
-    const overId = over.id;
+    const activeId = String(active.id);
+    const overId = String(over.id);
 
-    const activeTask = tasks.find((t) => t.id === taskId);
+    // on gère uniquement drag de task
+    if (!activeId.startsWith("task:")) return;
+
+    const taskId = Number(activeId.replace("task:", ""));
+    const activeTask = tasks.find((t) => Number(t.id) === taskId);
+    console.log("active.id:", activeId, "taskId:", taskId, "found:", !!activeTask);
     if (!activeTask) return;
 
-    //If drop on a task get the task
-    const overTask = tasks.find((t) => t.id === overId);
+    let targetColumnId = null;
 
-    // if drop on column, overId = "todo"/"doing"/"done"
-    const targetStatus = overTask ? overTask.status : overId;
-
-    if (!["todo", "doing", "done"].includes(targetStatus)) return;
-
-    // Add at the end
-    const newPosition = tasks.filter(
-      (t) => t.status === targetStatus && t.id !== taskId
-    ).length;
-
-    if (activeTask.status === targetStatus) {
-      const endPos = tasks.filter((t) => t.status === targetStatus && t.id !== taskId).length;
-      if (activeTask.position === endPos) return;
+    // drop sur colonne
+    if (overId.startsWith("col:")) {
+      targetColumnId = Number(overId.replace("col:", ""));
     }
 
-    // optimistic UI
+    // drop sur task (si tu veux supporter drop sur une carte)
+    if (overId.startsWith("task:")) {
+      const overTaskId = Number(overId.replace("task:", ""));
+      const overTask = tasks.find((t) => Number(t.id) === overTaskId);
+      targetColumnId = overTask?.column_id ?? null;
+    }
+
+    if (!Number.isInteger(targetColumnId)) return;
+
+    const newPosition = tasks.filter(
+      (t) => t.column_id === targetColumnId && t.id !== taskId
+    ).length;
+
+    if (activeTask.column_id === targetColumnId && activeTask.position === newPosition) return;
+
     const previous = tasks;
+
     setTasks((prev) =>
       prev.map((t) =>
-        t.id === taskId ? { ...t, status: targetStatus, position: newPosition } : t
+        t.id === taskId ? { ...t, column_id: targetColumnId, position: newPosition } : t
       )
     );
 
     try {
-      await api.patch(`/tasks/${taskId}`, {
-        status: targetStatus,
-        position: newPosition,
-      });
+      await api.patch(`/tasks/${taskId}`, { column_id: targetColumnId, position: newPosition });
     } catch (e) {
       console.error(e);
       setTasks(previous);
+      showToast("Erreur lors du déplacement", "error");
     }
   };
 
   const logout = () => {
-    sessionStorage.removeItem("token");
+    sessionStorage.removeItem("token"); // (ton code avait sessionStorage)
     window.location.href = "/";
   };
 
@@ -237,24 +311,48 @@ export default function Dashboard() {
     if (!selectedBoardId) return;
 
     const b = boards.find((x) => x.id === selectedBoardId);
-    const ok = window.confirm(`Supprimer le board "${b?.name}" ?\nToutes les tâches seront supprimées.`);
+    const ok = window.confirm(
+      `Supprimer le board "${b?.name}" ?\nToutes les tâches seront supprimées.`
+    );
     if (!ok) return;
 
     try {
       await api.delete(`/boards/${selectedBoardId}`);
 
-      // UI update
       setBoards((prev) => prev.filter((x) => x.id !== selectedBoardId));
       setSelectedBoardId(null);
+      prevBoardRef.current = null;
+      setColumns([]);
       setTasks([]);
       setShowCreateTask(false);
       setEditingTask(null);
+      showToast("Board supprimé");
     } catch (e) {
       console.error(e);
-      alert(e?.response?.data?.message || "Impossible de supprimer le board");
+      showToast(e?.response?.data?.message || "Impossible de supprimer le board", "error");
     }
   };
+  const createColumn = async () => {
+    if (!selectedBoardId) return showToast("Choisis un board", "error");
 
+    const name = newColumnName.trim();
+    if (!name) return;
+
+    try {
+      setCreatingColumn(true);
+
+      const position = columnsSorted.length; // à la fin
+      const res = await api.post(`/boards/${selectedBoardId}/columns`, { name, position });
+
+      setNewColumnName("");
+      showToast("Colonne créée");
+    } catch (e) {
+      console.error(e);
+      showToast("Impossible de créer la colonne", "error");
+    } finally {
+      setCreatingColumn(false);
+    }
+  };
 
   return (
     <div style={{ padding: 20 }}>
@@ -277,7 +375,7 @@ export default function Dashboard() {
         </div>
         <div style={{ display: "flex", gap: 10 }}>
           <button className="btn btn-secondary" style={{ width: "auto" }} onClick={logout}>
-                Logout
+            Logout
           </button>
         </div>
       </div>
@@ -296,7 +394,9 @@ export default function Dashboard() {
           + Créer board
         </button>
       </div>
+
       {loadingBoards && <div style={{ opacity: 0.75 }}>Chargement des boards…</div>}
+
       {/* Boards list */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>
         {boards.map((b) => (
@@ -308,61 +408,67 @@ export default function Dashboard() {
               borderColor:
                 selectedBoardId === b.id ? "rgba(79, 140, 255, 0.6)" : undefined,
             }}
-            onClick={() => loadTasks(b.id)}
+            onClick={() => loadBoard(b.id)}
           >
             {b.name}
           </button>
         ))}
       </div>
-      {loadingTasks ? (
-        <div style={{ opacity: 0.75 }}>Chargement des tâches…</div>
-      ) : (
-        <div></div>
-      )}
+
       {selectedBoardId && (
-        <div style={{ display: "flex", gap: 10 }}>
-            <button
-              className="btn btn-secondary"
-              style={{ width: "auto" }}
-              onClick={deleteBoard}
-            >
-              🗑️ Supprimer board
-            </button>
-            <button
-              className="btn btn-primary"
-              style={{ width: "auto" }}
-              onClick={() => setShowCreateTask(true)}
-              disabled={!selectedBoardId}
-              title={!selectedBoardId ? "Choisis un board d’abord" : ""}
-            >
-              + Task
-            </button>
-        </div>    
+        <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+          <button className="btn btn-secondary" style={{ width: "auto" }} onClick={deleteBoard}>
+            🗑️ Supprimer board
+          </button>
+          <input
+            className="input"
+            style={{ width: 220 }}
+            placeholder="Nouvelle colonne…"
+            value={newColumnName}
+            onChange={(e) => setNewColumnName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && createColumn()}
+          />
+
+          <button
+            className="btn btn-secondary"
+            style={{ width: "auto" }}
+            onClick={createColumn}
+            disabled={creatingColumn || !newColumnName.trim()}
+          >
+            + Colonne
+          </button>
+          <button
+            className="btn btn-primary"
+            style={{ width: "auto" }}
+            onClick={() => setShowCreateTask(true)}
+            disabled={!selectedBoardId || columnsSorted.length === 0}
+            title={!selectedBoardId ? "Choisis un board d’abord" : ""}
+          >
+            + Task
+          </button>
+        </div>
       )}
+
       {!selectedBoardId ? (
         <div style={{ opacity: 0.75 }}>Choisis un board pour voir les tâches.</div>
+      ) : loadingBoardData ? (
+        <div style={{ opacity: 0.75 }}>Chargement du board…</div>
+      ) : columnsSorted.length === 0 ? (
+        <div style={{ opacity: 0.75 }}>
+          Aucune colonne sur ce board. (Ajoute des colonnes côté backend/UI)
+        </div>
       ) : (
         <DndContext collisionDetection={closestCorners} onDragEnd={onDragEnd}>
-          
           <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
-            <TaskColumn
-              id="todo"
-              title="À faire"
-              tasks={byStatus.todo}
-              onOpenTask={(t) => setEditingTask(t)}
-            />
-            <TaskColumn
-              id="doing"
-              title="En cours"
-              tasks={byStatus.doing}
-              onOpenTask={(t) => setEditingTask(t)}
-            />
-            <TaskColumn
-              id="done"
-              title="Terminé"
-              tasks={byStatus.done}
-              onOpenTask={(t) => setEditingTask(t)}
-            />
+            {columnsSorted.map((col) => (
+              <TaskColumn
+                key={col.id}
+                id={`col:${col.id}`}
+                title={col.name}
+                tasks={tasksByColumnId.get(col.id) || []}
+                onOpenTask={(t) => setEditingTask(t)}
+              />
+            ))}
           </div>
         </DndContext>
       )}
@@ -370,6 +476,7 @@ export default function Dashboard() {
       {/* Modals */}
       {showCreateTask && (
         <TaskCreateModal
+          columns={columnsSorted}
           onClose={() => setShowCreateTask(false)}
           onCreate={createTask}
         />
@@ -378,11 +485,14 @@ export default function Dashboard() {
       {editingTask && (
         <TaskEditModal
           task={editingTask}
+          columns={columnsSorted}
           onClose={() => setEditingTask(null)}
           onSave={saveTask}
           onDelete={deleteTask}
         />
       )}
+
+      {/* Toast */}
       {toast && (
         <div
           style={{
@@ -392,7 +502,10 @@ export default function Dashboard() {
             padding: "10px 14px",
             borderRadius: 12,
             border: "1px solid rgba(255,255,255,0.15)",
-            background: toast.type === "error" ? "rgba(255, 70, 70, 0.18)" : "rgba(70, 180, 120, 0.18)",
+            background:
+              toast.type === "error"
+                ? "rgba(255, 70, 70, 0.18)"
+                : "rgba(70, 180, 120, 0.18)",
             color: "rgba(255,255,255,0.92)",
             backdropFilter: "blur(10px)",
             zIndex: 1000,

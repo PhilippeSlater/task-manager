@@ -1,5 +1,4 @@
 import { useDroppable } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import TaskCard from "./TaskCard";
 
 export default function TaskColumn({ id, title, tasks, onOpenTask }) {
@@ -24,11 +23,9 @@ export default function TaskColumn({ id, title, tasks, onOpenTask }) {
     >
       <div style={{ fontWeight: 900, marginBottom: 12 }}>{title}</div>
 
-      <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-        {tasks.map((t) => (
-          <TaskCard key={t.id} task={t} onOpen={() => onOpenTask(t)} />
-        ))}
-      </SortableContext>
+      {tasks.map((t) => (
+        <TaskCard key={t.id} task={t} onOpen={() => onOpenTask(t)} />
+      ))}
 
       {tasks.length === 0 && (
         <div style={{ opacity: 0.55, fontSize: 13, padding: "8px 2px" }}>

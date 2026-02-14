@@ -1,22 +1,26 @@
 import { useEffect, useState } from "react";
 import Modal from "./Modal";
 
-export default function TaskEditModal({ task, onClose, onSave, onDelete }) {
+export default function TaskEditModal({ task, columns, onClose, onSave, onDelete }) {
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description || "");
-  const [status, setStatus] = useState(task.status);
+  const [columnId, setColumnId] = useState(task.column_id ?? columns?.[0]?.id ?? null);
 
   useEffect(() => {
     setTitle(task.title);
     setDescription(task.description || "");
-    setStatus(task.status);
+    setColumnId(task.column_id ?? columns?.[0]?.id ?? null);
   }, [task]);
 
   const submit = (e) => {
     e.preventDefault();
     const t = title.trim();
     if (!t) return;
-    onSave(task.id, { title: t, description: description.trim() || null, status });
+    onSave(task.id, {
+      title: t,
+      description: description.trim(),
+      column_id: Number(columnId)
+    });
   };
 
   return (
@@ -34,10 +38,16 @@ export default function TaskEditModal({ task, onClose, onSave, onDelete }) {
         />
 
         <label className="label">Colonne</label>
-        <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="todo">À faire</option>
-          <option value="doing">En cours</option>
-          <option value="done">Terminé</option>
+        <select
+          className="input"
+          value={columnId ?? ""}
+          onChange={(e) => setColumnId(Number(e.target.value))}
+        >
+          {columns.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
         </select>
 
         <div style={{ display: "flex", gap: 10, marginTop: 14, justifyContent: "space-between" }}>
