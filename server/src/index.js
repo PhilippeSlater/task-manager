@@ -62,7 +62,6 @@ app.use("/auth", authLimiter);
 app.use("/auth", authRoutes);
 app.use("/boards", auth, require("./routes/boards"));
 app.use("/tasks", auth, require("./routes/tasks"));
-app.use("/columns", auth, require("./routes/columns"));
 
 server.listen(PORT, () => {
   console.log(`Server running on ${PORT}`);

@@ -8,7 +8,6 @@ const cors = require("cors");
 const authRoutes = require("./routes/auth");
 const boardsRoutes = require("./routes/boards");
 const tasksRoutes = require("./routes/tasks");
-const columnsRoutes = require("./routes/columns");
 
 const app = express();
 
@@ -26,7 +25,6 @@ const auth = require("./middleware/auth");
 app.use("/auth", authRoutes);
 app.use("/boards", auth, boardsRoutes);
 app.use("/tasks", auth, tasksRoutes);
-app.use("/columns", auth, columnsRoutes);
 
 // Health
 app.get("/health", (req, res) => res.json({ status: "ok" }));

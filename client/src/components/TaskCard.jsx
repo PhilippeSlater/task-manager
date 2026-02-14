@@ -1,8 +1,7 @@
-import { useDraggable } from "@dnd-kit/core";
+import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
 export default function TaskCard({ task, onOpen }) {
-  const dragId = `task:${task.id}`;
   const {
     attributes,
     listeners,
@@ -10,7 +9,7 @@ export default function TaskCard({ task, onOpen }) {
     transform,
     transition,
     isDragging,
-  } = useDraggable({ id: dragId });
+  } = useSortable({ id: `task:${task.id}` });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -25,15 +24,10 @@ export default function TaskCard({ task, onOpen }) {
 
   return (
     <div ref={setNodeRef} style={style}>
-      {/* Click zone: open edit modal */}
+      {/* click */}
       <div
         onClick={onOpen}
-        style={{
-          cursor: "pointer",
-          fontWeight: 800,
-          lineHeight: 1.2,
-          marginBottom: 8,
-        }}
+        style={{ cursor: "pointer", fontWeight: 800, marginBottom: 8 }}
       >
         {task.title}
       </div>
@@ -44,14 +38,12 @@ export default function TaskCard({ task, onOpen }) {
         </div>
       )}
 
-      {/* Drag handle ONLY (so clicks are reliable) */}
+      {/* drag handle */}
       <div
         {...attributes}
         {...listeners}
         style={{
           display: "inline-flex",
-          alignItems: "center",
-          gap: 8,
           padding: "6px 10px",
           borderRadius: 10,
           border: "1px solid rgba(255,255,255,0.12)",
@@ -61,7 +53,6 @@ export default function TaskCard({ task, onOpen }) {
           opacity: 0.85,
           fontSize: 13,
         }}
-        title="Glisser pour déplacer"
       >
         ⠿ Déplacer
       </div>

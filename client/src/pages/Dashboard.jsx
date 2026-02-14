@@ -101,7 +101,16 @@ export default function Dashboard() {
       setTasks((prev) => prev.filter((t) => t.column_id !== id));
     });
 
-    return () => s.disconnect();
+
+    return () => {
+      s.off("taskCreated");
+      s.off("taskUpdated");
+      s.off("taskDeleted");
+      s.off("columnCreated");
+      s.off("columnUpdated");
+      s.off("columnDeleted");
+      s.disconnect();
+    };
   }, []);
 
   const normalizeTask = (t) => ({
@@ -130,10 +139,10 @@ export default function Dashboard() {
     // leave old room / join new 
     const prev = prevBoardRef.current;
     if (socket && prev) socket.emit("board:leave", prev);
-    if (socket) socket.emit("board:join", boardId);
+    if (socket) socket.emit("board:join", id);
 
-    prevBoardRef.current = boardId;
-    setSelectedBoardId(boardId);
+    prevBoardRef.current = id;
+    setSelectedBoardId(id);
 
     // clear UI while loading
     setColumns([]);
@@ -248,6 +257,7 @@ export default function Dashboard() {
       showToast("Impossible de supprimer la tâche", "error");
     }
   };
+  
 
   const onDragEnd = async ({ active, over }) => {
     if (!over) return;
@@ -343,7 +353,9 @@ export default function Dashboard() {
 
       const position = columnsSorted.length; // à la fin
       const res = await api.post(`/boards/${selectedBoardId}/columns`, { name, position });
+      const nc = normalizeColumn(res.data);
 
+      setColumns((prev) => (prev.some((c) => c.id === nc.id) ? prev : [...prev, nc]));
       setNewColumnName("");
       showToast("Colonne créée");
     } catch (e) {
@@ -353,6 +365,39 @@ export default function Dashboard() {
       setCreatingColumn(false);
     }
   };
+
+  const renameColumn = async (columnId, name) => {
+    if (!selectedBoardId) return;
+
+    // optimistic
+    const prev = columns;
+    setColumns((p) => p.map((c) => (c.id === columnId ? { ...c, name } : c)));
+
+    try {
+      await api.patch(`/boards/${selectedBoardId}/columns/${columnId}`, { name });
+      showToast("Colonne renommée");
+      // socket columnUpdated va aussi arriver (ok)
+    } catch (e) {
+      console.error(e);
+      setColumns(prev);
+      showToast("Impossible de renommer la colonne", "error");
+    }
+  };
+
+  const removeColumn = async (columnId) => {
+    if (!selectedBoardId) return;
+
+    try {
+      await api.delete(`/boards/${selectedBoardId}/columns/${columnId}`);
+      showToast("Colonne supprimée");
+      // socket columnDeleted va enlever côté client (ou tu peux le faire ici aussi)
+    } catch (e) {
+      console.error(e);
+      const msg = e?.response?.data?.message || "Impossible de supprimer la colonne";
+      showToast(msg, "error");
+    }
+  };
+
 
   return (
     <div style={{ padding: 20 }}>
@@ -463,10 +508,12 @@ export default function Dashboard() {
             {columnsSorted.map((col) => (
               <TaskColumn
                 key={col.id}
-                id={`col:${col.id}`}
-                title={col.name}
+                id={`col:${col.id}`}  
+                column={col}
                 tasks={tasksByColumnId.get(col.id) || []}
                 onOpenTask={(t) => setEditingTask(t)}
+                onRenameColumn={renameColumn}
+                onDeleteColumn={removeColumn}
               />
             ))}
           </div>
