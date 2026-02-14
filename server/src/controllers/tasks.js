@@ -1,13 +1,6 @@
-const pool = require("../config/db");
+const {canAccessBoard} = require("../helpers/boardAccess");
 
-// Make sure its the owner
-async function assertBoardOwnership(boardId, ownerId) {
-  const b = await pool.query(
-    "SELECT id FROM boards WHERE id=$1 AND owner_id=$2",
-    [boardId, ownerId]
-  );
-  return b.rows.length > 0;
-}
+const pool = require("../config/db");
 
 // GET /tasks/board/:boardId
 exports.listTasksByBoard = async (req, res) => {
@@ -15,7 +8,7 @@ exports.listTasksByBoard = async (req, res) => {
     const ownerId = req.user.id;
     const boardId = Number(req.params.boardId);
 
-    const ok = await assertBoardOwnership(boardId, ownerId);
+    const ok = await canAccessBoard(boardId, ownerId);
     if (!ok) return res.status(404).json({ message: "Board not found" });
 
     const result = await pool.query(
@@ -44,7 +37,7 @@ exports.createTask = async (req, res) => {
     if (!board_id || !title)
       return res.status(400).json({ message: "board_id and title required" });
 
-    const okBoard = await assertBoardOwnership(Number(board_id), ownerId);
+    const okBoard = await canAccessBoard(Number(board_id), ownerId);
     if (!okBoard) return res.status(404).json({ message: "Board not found" });
 
     const okCol = await pool.query("SELECT 1 FROM columns WHERE id=$1 AND board_id=$2", [columnId, board_id]);

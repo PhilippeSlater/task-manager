@@ -8,6 +8,7 @@ import api from "../services/api";
 import TaskColumn from "../components/TaskColumn";
 import TaskCreateModal from "../components/TaskCreateModal";
 import TaskEditModal from "../components/TaskEditModal";
+import BoardAdminModal from "../components/BoardAdminModal";
 
 const SOCKET_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
@@ -31,6 +32,9 @@ export default function Dashboard() {
 
   const [newColumnName, setNewColumnName] = useState("");
   const [creatingColumn, setCreatingColumn] = useState(false);
+
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
 
   const prevBoardRef = useRef(null);
 
@@ -164,10 +168,13 @@ export default function Dashboard() {
     setTasks([]);
 
     try {
-      const [colsRes, tasksRes] = await Promise.all([
+      const [colsRes, tasksRes, meRes] = await Promise.all([
         api.get(`/boards/${boardId}/columns`),
         api.get(`/tasks/board/${boardId}`),
+        api.get(`/boards/${boardId}/me`),
       ]);
+
+      setIsOwner(meRes.data.role === "owner");
 
       setColumns(colsRes.data.map(normalizeColumn));
       setTasks(tasksRes.data.map(normalizeTask));
@@ -556,7 +563,28 @@ export default function Dashboard() {
 
       {selectedBoardId && (
         <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
-          <button className="btn btn-secondary" style={{ width: "auto" }} onClick={deleteBoard}>
+          
+          <button
+            className="btn btn-primary"
+            style={{ width: "auto" }}
+            onClick={() => setShowCreateTask(true)}
+            disabled={!selectedBoardId || columnsSorted.length === 0}
+            title={!selectedBoardId ? "Choisis un board d’abord" : ""}
+          >
+            + Task
+          </button>
+        </div>
+      )}
+      {selectedBoardId && isOwner && (
+        <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+        <button
+          className="btn btn-secondary"
+          style={{ width: "auto" }}
+          onClick={() => setShowAdmin(true)}
+        >
+          👤 Admin
+        </button>
+        <button className="btn btn-secondary" style={{ width: "auto" }} onClick={deleteBoard}>
             🗑️ Supprimer board
           </button>
           <input
@@ -576,18 +604,11 @@ export default function Dashboard() {
           >
             + Colonne
           </button>
-          <button
-            className="btn btn-primary"
-            style={{ width: "auto" }}
-            onClick={() => setShowCreateTask(true)}
-            disabled={!selectedBoardId || columnsSorted.length === 0}
-            title={!selectedBoardId ? "Choisis un board d’abord" : ""}
-          >
-            + Task
-          </button>
-        </div>
+          </div>
       )}
-
+      {showAdmin && isOwner && (
+          <BoardAdminModal boardId={selectedBoardId} onClose={() => setShowAdmin(false)} />
+        )}
       {!selectedBoardId ? (
         <div style={{ opacity: 0.75 }}>Choisis un board pour voir les tâches.</div>
       ) : loadingBoardData ? (

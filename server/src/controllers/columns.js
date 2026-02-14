@@ -1,22 +1,6 @@
+const {canAccessBoard} = require("../helpers/boardAccess");
+
 const pool = require("../config/db");
-
-// owner check
-async function assertBoardOwnership(boardId, ownerId) {
-  const r = await pool.query(
-    "SELECT id FROM boards WHERE id=$1 AND owner_id=$2",
-    [boardId, ownerId]
-  );
-  return r.rows.length > 0;
-}
-
-// column belongs to board
-async function assertColumnInBoard(columnId, boardId) {
-  const r = await pool.query(
-    "SELECT id FROM columns WHERE id=$1 AND board_id=$2",
-    [columnId, boardId]
-  );
-  return r.rows.length > 0;
-}
 
 // GET /boards/:boardId/columns
 exports.listColumns = async (req, res) => {
@@ -28,7 +12,7 @@ exports.listColumns = async (req, res) => {
       return res.status(400).json({ message: "Invalid board id" });
     }
 
-    const ok = await assertBoardOwnership(boardId, ownerId);
+    const ok = await canAccessBoard(boardId, ownerId);
     if (!ok) return res.status(404).json({ message: "Board not found" });
 
     const r = await pool.query(
@@ -60,7 +44,7 @@ exports.createColumn = async (req, res) => {
     const n = String(name || "").trim();
     if (!n) return res.status(400).json({ message: "name required" });
 
-    const ok = await assertBoardOwnership(boardId, ownerId);
+    const ok = await canAccessBoard(boardId, ownerId);
     if (!ok) return res.status(404).json({ message: "Board not found" });
 
     const pos = Number.isInteger(position) ? position : 0;
@@ -93,7 +77,7 @@ exports.updateColumn = async (req, res) => {
     if (!Number.isInteger(boardId)) return res.status(400).json({ message: "Invalid board id" });
     if (!Number.isInteger(columnId)) return res.status(400).json({ message: "Invalid column id" });
 
-    const ok = await assertBoardOwnership(boardId, ownerId);
+    const ok = await canAccessBoard(boardId, ownerId);
     if (!ok) return res.status(404).json({ message: "Board not found" });
 
     const { name, position } = req.body || {};
@@ -137,7 +121,7 @@ exports.deleteColumn = async (req, res) => {
     if (!Number.isInteger(boardId)) return res.status(400).json({ message: "Invalid board id" });
     if (!Number.isInteger(columnId)) return res.status(400).json({ message: "Invalid column id" });
 
-    const ok = await assertBoardOwnership(boardId, ownerId);
+    const ok = await canAccessBoard(boardId, ownerId);
     if (!ok) return res.status(404).json({ message: "Board not found" });
 
     // si tu veux empêcher delete si tasks existent -> check ici
@@ -175,7 +159,7 @@ exports.reorderColumns = async (req, res) => {
     return res.status(400).json({ message: "Invalid column id" });
   }
 
-  const ok = await assertBoardOwnership(boardId, ownerId);
+  const ok = await canAccessBoard(boardId, ownerId);
   if (!ok) return res.status(404).json({ message: "Board not found" });
 
   const client = await pool.connect();

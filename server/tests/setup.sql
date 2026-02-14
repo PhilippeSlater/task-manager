@@ -80,4 +80,15 @@ BEFORE UPDATE ON tasks
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at();
 
+create table if not exists board_members (
+  board_id int not null references boards(id) on delete cascade,
+  user_id  int not null references users(id) on delete cascade,
+  role text not null default 'member',
+  created_at timestamptz not null default now(),
+  primary key (board_id, user_id)
+);
+
+create index if not exists idx_board_members_user on board_members(user_id);
+create index if not exists idx_board_members_board on board_members(board_id);
+
 COMMIT;
