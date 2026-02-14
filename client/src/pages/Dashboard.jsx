@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { DndContext, closestCorners } from "@dnd-kit/core";
-
+import { arrayMove } from "@dnd-kit/sortable";
 import api from "../services/api";
 import TaskColumn from "../components/TaskColumn";
 import TaskCreateModal from "../components/TaskCreateModal";
@@ -265,23 +265,18 @@ export default function Dashboard() {
     const activeId = String(active.id);
     const overId = String(over.id);
 
-    // on gère uniquement drag de task
     if (!activeId.startsWith("task:")) return;
 
     const taskId = Number(activeId.replace("task:", ""));
     const activeTask = tasks.find((t) => Number(t.id) === taskId);
-    console.log("active.id:", activeId, "taskId:", taskId, "found:", !!activeTask);
     if (!activeTask) return;
 
+    // Déterminer la colonne cible
     let targetColumnId = null;
 
-    // drop sur colonne
     if (overId.startsWith("col:")) {
       targetColumnId = Number(overId.replace("col:", ""));
-    }
-
-    // drop sur task (si tu veux supporter drop sur une carte)
-    if (overId.startsWith("task:")) {
+    } else if (overId.startsWith("task:")) {
       const overTaskId = Number(overId.replace("task:", ""));
       const overTask = tasks.find((t) => Number(t.id) === overTaskId);
       targetColumnId = overTask?.column_id ?? null;
@@ -289,26 +284,78 @@ export default function Dashboard() {
 
     if (!Number.isInteger(targetColumnId)) return;
 
-    const newPosition = tasks.filter(
-      (t) => t.column_id === targetColumnId && t.id !== taskId
-    ).length;
+    const sourceColumnId = activeTask.column_id;
 
-    if (activeTask.column_id === targetColumnId && activeTask.position === newPosition) return;
+    // Liste source & cible (triées)
+    const sourceList = tasks
+      .filter((t) => t.column_id === sourceColumnId)
+      .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
+    const targetList = tasks
+      .filter((t) => t.column_id === targetColumnId)
+      .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+
+    const sourceIndex = sourceList.findIndex((t) => t.id === taskId);
+
+    // Si drop sur une task, index cible = index de cette task
+    let targetIndex = targetList.length; // drop sur colonne => fin
+    if (overId.startsWith("task:")) {
+      const overTaskId = Number(overId.replace("task:", ""));
+      targetIndex = targetList.findIndex((t) => t.id === overTaskId);
+      if (targetIndex < 0) targetIndex = targetList.length;
+    }
+
+    // --- Construire la nouvelle liste source/cible
+    let newSource = [...sourceList];
+    let newTarget = sourceColumnId === targetColumnId ? newSource : [...targetList];
+
+    // retirer l’item de la source
+    const [moved] = newSource.splice(sourceIndex, 1);
+
+    // si on change de colonne, on modifie column_id
+    const movedUpdated = { ...moved, column_id: targetColumnId };
+
+    // insérer dans cible
+    newTarget.splice(targetIndex, 0, movedUpdated);
+
+    // si même colonne => c’est juste un reorder (arrayMove simplifie)
+    if (sourceColumnId === targetColumnId) {
+      newTarget = arrayMove(sourceList, sourceIndex, targetIndex);
+    }
+
+    // recalcul positions (0..n-1)
+    newSource = newSource.map((t, i) => ({ ...t, position: i }));
+    newTarget = newTarget.map((t, i) => ({ ...t, position: i }));
+
+    // optimistic UI (remplacer toutes les tasks des colonnes touchées)
     const previous = tasks;
+    setTasks((prev) => {
+      const others = prev.filter(
+        (t) => t.column_id !== sourceColumnId && t.column_id !== targetColumnId
+      );
+      const merged =
+        sourceColumnId === targetColumnId
+          ? [...others, ...newTarget]
+          : [...others, ...newSource, ...newTarget];
 
-    setTasks((prev) =>
-      prev.map((t) =>
-        t.id === taskId ? { ...t, column_id: targetColumnId, position: newPosition } : t
-      )
-    );
+      return merged;
+    });
 
+    // --- Persistance (simple et fiable) : patch les tasks impactées
+    // (tu peux optimiser plus tard avec un endpoint bulk)
     try {
-      await api.patch(`/tasks/${taskId}`, { column_id: targetColumnId, position: newPosition });
+      const toSave =
+        sourceColumnId === targetColumnId ? newTarget : [...newSource, ...newTarget];
+
+      await Promise.all(
+        toSave.map((t) =>
+          api.patch(`/tasks/${t.id}`, { column_id: t.column_id, position: t.position })
+        )
+      );
     } catch (e) {
       console.error(e);
       setTasks(previous);
-      showToast("Erreur lors du déplacement", "error");
+      showToast("Erreur lors du réordonnancement", "error");
     }
   };
 
