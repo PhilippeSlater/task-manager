@@ -8,6 +8,7 @@ const rateLimit = require("express-rate-limit");
 const helmet = require("helmet");
 const auth = require("./middleware/auth");
 const authRoutes = require("./routes/auth");
+const invitationsRoutes = require("./routes/invitations");
 
 const app = express();
 const PORT = 5000;
@@ -62,6 +63,7 @@ app.use("/auth", authLimiter);
 app.use("/auth", authRoutes);
 app.use("/boards", auth, require("./routes/boards"));
 app.use("/tasks", auth, require("./routes/tasks"));
+app.use("/", auth, invitationsRoutes);
 
 server.listen(PORT, () => {
   console.log(`Server running on ${PORT}`);

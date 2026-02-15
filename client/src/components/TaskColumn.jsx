@@ -45,8 +45,6 @@ export default function TaskColumn({
     flex: "0 0 320px",
     minWidth: 280,
     maxWidth: 420,
-    minWidth: 280,
-    maxWidth: 420,
     padding: 14,
     borderRadius: 16,
     border: isOver

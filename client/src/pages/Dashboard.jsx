@@ -40,6 +40,10 @@ export default function Dashboard() {
   const [showAdmin, setShowAdmin] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
 
+  // --- Invites + Leave board
+  const [invites, setInvites] = useState([]);
+  const [loadingInvites, setLoadingInvites] = useState(false);
+
   const prevBoardRef = useRef(null);
 
   const showToast = (message, type = "success") => {
@@ -62,17 +66,40 @@ export default function Dashboard() {
     position: Number(c.position ?? 0),
   });
 
+  const normalizeInvite = (i) => ({
+    ...i,
+    id: Number(i.id),
+    board_id: Number(i.board_id),
+    invited_by: Number(i.invited_by),
+  });
+
+  // --- Load my invites
+  const loadInvites = async () => {
+    try {
+      setLoadingInvites(true);
+      const res = await api.get("/me/invitations");
+      setInvites((res.data || []).map(normalizeInvite));
+    } catch (e) {
+      // pas bloquant
+      console.error(e);
+    } finally {
+      setLoadingInvites(false);
+    }
+  };
+
   // --- Socket init (once)
   useEffect(() => {
     const s = io(SOCKET_URL, { transports: ["websocket", "polling"] });
     setSocket(s);
+
     const handleConnect = () => {
       const bid = prevBoardRef.current;
       if (bid) s.emit("board:join", bid);
     };
-
     s.on("connect", handleConnect);
-
+    const userId = s.user?.id; 
+    if (userId) s.join(`user:${userId}`);
+    // Tasks
     s.on("taskCreated", (t) => {
       const nt = normalizeTask(t);
       if (Number(nt.board_id) !== Number(prevBoardRef.current)) return;
@@ -90,6 +117,7 @@ export default function Dashboard() {
       setTasks((prev) => prev.filter((x) => x.id !== Number(id)));
     });
 
+    // Columns
     s.on("columnCreated", (c) => {
       const nc = normalizeColumn(c);
       if (Number(nc.board_id) !== Number(prevBoardRef.current)) return;
@@ -123,33 +151,54 @@ export default function Dashboard() {
       });
     });
 
+    // Invites (notifications)
+    s.on("inviteCreated", (invite) => {
+      const ni = normalizeInvite(invite);
+      setInvites((prev) => (prev.some((x) => x.id === ni.id) ? prev : [ni, ...prev]));
+      showToast("Nouvelle invitation reçue", "success");
+    });
+
+    s.on("inviteResponded", ({ inviteId }) => {
+      setInvites((prev) => prev.filter((x) => x.id !== Number(inviteId)));
+    });
+
     return () => {
       s.off("connect", handleConnect);
+
       s.off("taskCreated");
       s.off("taskUpdated");
       s.off("taskDeleted");
+
       s.off("columnCreated");
       s.off("columnUpdated");
       s.off("columnDeleted");
       s.off("columnsReordered");
+
+      s.off("inviteCreated");
+      s.off("inviteResponded");
+
       s.disconnect();
     };
   }, []);
 
-  // --- Load boards on mount
+  // --- Load boards + invites on mount
   useEffect(() => {
     setLoadingBoards(true);
-    api
-      .get("/boards")
-      .then((res) => {
-        setBoards(res.data);
+
+    Promise.all([
+      api.get("/boards"),
+      loadInvites(), 
+    ])
+      .then(([boardsRes]) => {
+        const data = boardsRes.data || [];
+        setBoards(data);
 
         const last = sessionStorage.getItem("lastBoardId");
         const lastId = last ? Number(last) : null;
 
-        const exists = lastId && res.data.some((b) => Number(b.id) === lastId);
+        const exists = lastId && data.some((b) => Number(b.id) === lastId);
         if (exists) loadBoard(lastId);
-        else if (res.data.length) loadBoard(Number(res.data[0].id));
+        else if (data.length) loadBoard(Number(data[0].id));
       })
       .catch(() => {
         sessionStorage.removeItem("token");
@@ -186,8 +235,8 @@ export default function Dashboard() {
       ]);
 
       setIsOwner(meRes.data.role === "owner");
-      setColumns(colsRes.data.map(normalizeColumn));
-      setTasks(tasksRes.data.map(normalizeTask));
+      setColumns((colsRes.data || []).map(normalizeColumn));
+      setTasks((tasksRes.data || []).map(normalizeTask));
     } catch (e) {
       console.error(e);
       showToast("Impossible de charger le board (colonnes/tâches)", "error");
@@ -250,7 +299,6 @@ export default function Dashboard() {
       });
 
       const nt = normalizeTask(res.data);
-
       setTasks((prev) => (prev.some((x) => x.id === nt.id) ? prev : [...prev, nt]));
 
       setShowCreateTask(false);
@@ -340,6 +388,57 @@ export default function Dashboard() {
     } catch (e) {
       console.error(e);
       showToast(e?.response?.data?.message || "Impossible de supprimer la colonne", "error");
+    }
+  };
+
+  // --- Invitations: accept / decline
+  const respondInvite = async (inviteId, action) => {
+    try {
+      await api.post(`/invitations/${inviteId}/respond`, { action });
+      setInvites((prev) => prev.filter((x) => x.id !== Number(inviteId)));
+
+      if (action === "accept") {
+        showToast("Invitation acceptée ✅");
+        const b = await api.get("/boards");
+        setBoards(b.data || []);
+      } else {
+        showToast("Invitation refusée");
+      }
+    } catch (e) {
+      console.error(e);
+      showToast("Impossible de répondre à l'invitation", "error");
+    }
+  };
+
+  // --- Leave board (member)
+  const leaveBoard = async () => {
+    if (!selectedBoardId) return;
+    if (isOwner) return showToast("Le owner ne peut pas quitter", "error");
+
+    const b = boards.find((x) => Number(x.id) === Number(selectedBoardId));
+    const ok = window.confirm(`Quitter le board "${b?.name}" ?`);
+    if (!ok) return;
+
+    try {
+      await api.delete(`/boards/${selectedBoardId}/members/me`);
+      showToast("Tu as quitté le board");
+
+      const bres = await api.get("/boards");
+      const list = bres.data || [];
+      setBoards(list);
+
+      setSelectedBoardId(null);
+      prevBoardRef.current = null;
+      setColumns([]);
+      setTasks([]);
+      setShowCreateTask(false);
+      setEditingTask(null);
+      setShowAdmin(false);
+
+      if (list.length) loadBoard(Number(list[0].id));
+    } catch (e) {
+      console.error(e);
+      showToast(e?.response?.data?.message || "Impossible de quitter le board", "error");
     }
   };
 
@@ -513,12 +612,106 @@ export default function Dashboard() {
             Sélectionne un board, puis ajoute/modifie tes tâches.
           </div>
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
+
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          {/* Invites badge */}
+          <button
+            className="btn btn-secondary"
+            style={{ width: "auto", position: "relative" }}
+            onClick={loadInvites}
+            title="Rafraîchir les invitations"
+          >
+            🔔 Invitations
+            {invites.length > 0 && (
+              <span
+                style={{
+                  position: "absolute",
+                  top: -6,
+                  right: -6,
+                  width: 18,
+                  height: 18,
+                  borderRadius: 999,
+                  background: "rgba(255, 70, 70, 0.95)",
+                  color: "white",
+                  fontSize: 11,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  lineHeight: 1,
+                }}
+              >
+                {invites.length}
+              </span>
+            )}
+          </button>
+
           <button className="btn btn-secondary" style={{ width: "auto" }} onClick={logout}>
             Logout
           </button>
         </div>
       </div>
+
+      {/* Invites panel */}
+      {invites.length > 0 && (
+        <div
+          style={{
+            marginBottom: 14,
+            padding: 12,
+            borderRadius: 14,
+            border: "1px solid rgba(255,255,255,0.12)",
+            background: "rgba(0,0,0,0.20)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <div style={{ fontWeight: 600 }}>Invitations en attente</div>
+            <div style={{ opacity: 0.7, fontSize: 12 }}>
+              {loadingInvites ? "Chargement…" : `${invites.length} invitation(s)`}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 10 }}>
+            {invites.map((inv) => (
+              <div
+                key={inv.id}
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: 10,
+                  borderRadius: 12,
+                  border: "1px solid rgba(255,255,255,0.10)",
+                  background: "rgba(255,255,255,0.04)",
+                }}
+              >
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <div style={{ fontWeight: 600 }}>{inv.board_name || `Board #${inv.board_id}`}</div>
+                  <div style={{ opacity: 0.7, fontSize: 12 }}>
+                    Invitation #{inv.id}
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    className="btn btn-secondary"
+                    style={{ width: "auto" }}
+                    onClick={() => respondInvite(inv.id, "decline")}
+                  >
+                    Refuser
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    style={{ width: "auto" }}
+                    onClick={() => respondInvite(inv.id, "accept")}
+                  >
+                    Accepter
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Create board */}
       <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
@@ -565,13 +758,23 @@ export default function Dashboard() {
           >
             + Task
           </button>
+
+          {!isOwner && (
+            <button className="btn btn-secondary" style={{ width: "auto" }} onClick={leaveBoard}>
+              🚪 Quitter le board
+            </button>
+          )}
         </div>
       )}
 
       {/* Actions owner */}
       {selectedBoardId && isOwner && (
         <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
-          <button className="btn btn-secondary" style={{ width: "auto" }} onClick={() => setShowAdmin(true)}>
+          <button
+            className="btn btn-secondary"
+            style={{ width: "auto" }}
+            onClick={() => setShowAdmin(true)}
+          >
             👤 Admin
           </button>
 
@@ -615,6 +818,7 @@ export default function Dashboard() {
             items={columnsSorted.map((c) => `col:${c.id}`)}
             strategy={horizontalListSortingStrategy}
           >
+            {/* ✅ colonnes toujours left-to-right, scroll horizontal, jamais en dessous */}
             <div
               style={{
                 display: "flex",
@@ -645,7 +849,11 @@ export default function Dashboard() {
 
       {/* Modals */}
       {showCreateTask && (
-        <TaskCreateModal columns={columnsSorted} onClose={() => setShowCreateTask(false)} onCreate={createTask} />
+        <TaskCreateModal
+          columns={columnsSorted}
+          onClose={() => setShowCreateTask(false)}
+          onCreate={createTask}
+        />
       )}
 
       {editingTask && (
@@ -668,7 +876,10 @@ export default function Dashboard() {
             padding: "10px 14px",
             borderRadius: 12,
             border: "1px solid rgba(255,255,255,0.15)",
-            background: toast.type === "error" ? "rgba(255, 70, 70, 0.18)" : "rgba(70, 180, 120, 0.18)",
+            background:
+              toast.type === "error"
+                ? "rgba(255, 70, 70, 0.18)"
+                : "rgba(70, 180, 120, 0.18)",
             color: "rgba(255,255,255,0.92)",
             backdropFilter: "blur(10px)",
             zIndex: 1000,

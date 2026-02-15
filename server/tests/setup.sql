@@ -91,4 +91,20 @@ create table if not exists board_members (
 create index if not exists idx_board_members_user on board_members(user_id);
 create index if not exists idx_board_members_board on board_members(board_id);
 
+CREATE TABLE IF NOT EXISTS board_invitations (
+  id SERIAL PRIMARY KEY,
+  board_id INT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+  invited_user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  invited_by INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'pending', -- pending | accepted | declined | canceled
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  responded_at TIMESTAMPTZ
+);
+
+-- 1 invitation pending max par board/user
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_board_invite_pending
+ON board_invitations(board_id, invited_user_id)
+WHERE status='pending';
+
+
 COMMIT;

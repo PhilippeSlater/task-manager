@@ -3,20 +3,22 @@ const pool = require("../config/db");
 // GET /boards
 exports.listBoards = async (req, res) => {
   try {
-    const userId = Number(req.user.id);
+    const userId = req.user.id;
 
     const r = await pool.query(
-      `SELECT DISTINCT b.id, b.name, b.owner_id, b.created_at
-       FROM boards b
-       LEFT JOIN board_members bm ON bm.board_id = b.id
-       WHERE b.owner_id=$1 OR bm.user_id=$1
-       ORDER BY b.created_at DESC`,
+      `
+      SELECT DISTINCT b.id, b.name, b.owner_id
+      FROM boards b
+      LEFT JOIN board_members bm ON bm.board_id = b.id
+      WHERE b.owner_id = $1 OR bm.user_id = $1
+      ORDER BY b.id DESC
+      `,
       [userId]
     );
 
     res.json(r.rows);
-  } catch (err) {
-    console.error("BOARDS listBoards:", err);
+  } catch (e) {
+    console.log(e);
     res.status(500).json({ message: "Server error" });
   }
 };

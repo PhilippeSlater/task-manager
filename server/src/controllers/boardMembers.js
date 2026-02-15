@@ -40,26 +40,45 @@ exports.addMemberByEmail = async (req, res) => {
     const ok = await isBoardOwner(boardId, ownerId);
     if (!ok) return res.status(403).json({ message: "Owner only" });
 
-    const u = await pool.query(`SELECT id, email FROM users WHERE lower(email)=lower($1)`, [email]);
+    // user exists?
+    const u = await pool.query(
+      `SELECT id, email FROM users WHERE lower(email)=lower($1)`,
+      [email]
+    );
     if (!u.rows.length) return res.status(404).json({ message: "User not found" });
 
-    const userId = Number(u.rows[0].id);
+    const invitedUserId = Number(u.rows[0].id);
 
-    // optional: empêcher d'inviter l'owner
-    // if (userId === ownerId) return res.status(400).json({ message: "Already owner" });
+    // already member?
+    const m = await pool.query(
+      `SELECT 1 FROM board_members WHERE board_id=$1 AND user_id=$2`,
+      [boardId, invitedUserId]
+    );
+    if (m.rows.length) return res.status(400).json({ message: "User already member" });
 
+    // create invitation (pending) - prevent duplicates
     const r = await pool.query(
-      `INSERT INTO board_members (board_id, user_id, role)
-       VALUES ($1,$2,'member')
-       ON CONFLICT (board_id, user_id) DO UPDATE SET role=EXCLUDED.role
-       RETURNING board_id, user_id, role, created_at`,
-      [boardId, userId]
+      `INSERT INTO board_invitations(board_id, invited_user_id, invited_by, status)
+       VALUES ($1,$2,$3,'pending')
+       ON CONFLICT DO NOTHING
+       RETURNING id, board_id, invited_user_id, invited_by, status, created_at`,
+      [boardId, invitedUserId, ownerId]
     );
 
-    // renvoyer aussi email pour UI
-    res.status(201).json({ ...r.rows[0], email: u.rows[0].email, id: userId });
+    if (!r.rows.length) {
+      return res.status(400).json({ message: "Invitation already pending" });
+    }
+
+    const invite = r.rows[0];
+
+    // notify invited user
+    const io = req.app.get("io");
+    if (io) io.to(`user:${invitedUserId}`).emit("inviteCreated", invite);
+
+    // renvoyer aussi l'email (pratique UI)
+    res.status(201).json({ ...invite, email: u.rows[0].email, id: invitedUserId });
   } catch (err) {
-    console.error("MEMBERS addMemberByEmail:", err);
+    console.error("MEMBERS addMemberByEmail(invite):", err);
     res.status(500).json({ message: "Server error" });
   }
 };

@@ -2,11 +2,15 @@ const router = require("express").Router();
 const boards = require("../controllers/boards");
 const columns = require("../controllers/columns");
 const members = require("../controllers/boardMembers");
+const c = require("../controllers/invitationsController");
+
 
 router.get("/", boards.listBoards);
 router.get("/:boardId/me", boards.getMyRole);
 router.post("/", boards.createBoard);
+router.post("/:boardId/invitations", c.createInvitation);
 router.delete("/:id", boards.deleteBoard);
+router.delete("/:boardId/members/me", c.leaveBoard);
 
 // columns
 router.get("/:boardId/columns", columns.listColumns);
