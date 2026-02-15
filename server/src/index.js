@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const jwt = require("jsonwebtoken");
 const pool = require("./config/db");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -31,8 +32,22 @@ const io = new Server(server, {
 });
 
 app.set("io", io);
+io.use((socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token;
+    if (!token) return next();
 
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    socket.userId = Number(payload.id);
+    next();
+  } catch (e) {
+    next();
+  }
+});
 io.on("connection", (socket) => {
+  if (socket.userId) {
+    socket.join(`user:${socket.userId}`);
+  }
   socket.on("board:join", (boardId) => {
     const id = Number(boardId);
     if (!Number.isInteger(id)) return;
@@ -87,6 +102,3 @@ pool.query("SELECT NOW()")
     console.error("DB Connection Error:", err);
   });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});

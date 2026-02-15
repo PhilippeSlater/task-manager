@@ -89,7 +89,8 @@ export default function Dashboard() {
 
   // --- Socket init (once)
   useEffect(() => {
-    const s = io(SOCKET_URL, { transports: ["websocket", "polling"] });
+    const token = sessionStorage.getItem("token");
+    const s = io(SOCKET_URL, { transports: ["websocket", "polling"], auth: { token } });
     setSocket(s);
 
     const handleConnect = () => {
@@ -97,8 +98,7 @@ export default function Dashboard() {
       if (bid) s.emit("board:join", bid);
     };
     s.on("connect", handleConnect);
-    const userId = s.user?.id; 
-    if (userId) s.join(`user:${userId}`);
+
     // Tasks
     s.on("taskCreated", (t) => {
       const nt = normalizeTask(t);
