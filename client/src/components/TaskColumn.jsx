@@ -1,52 +1,80 @@
+// client/src/components/TaskColumn.jsx
 import { useEffect, useRef, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
 import TaskCard from "./TaskCard";
 
 export default function TaskColumn({
-  id,              // droppable id = String(column.id)
-  column,          // { id, name, position, ... }
+  column,
   tasks,
+  isOwner,
   onOpenTask,
   onRenameColumn,
   onDeleteColumn,
 }) {
   const colId = `col:${column.id}`;
+
+  // droppable (pour drop task)
   const { setNodeRef: setDroppableRef, isOver } = useDroppable({ id: colId });
+
+  // sortable (pour déplacer colonne) — DISABLED si pas owner
   const {
-      setNodeRef: setSortableRef,
-      attributes,
-      listeners,
-      transform,
-      transition,
-      isDragging,
-    } = useSortable({ id: colId });
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [editingName, setEditingName] = useState(false);
-  const [name, setName] = useState(column?.name || "");
-  const inputRef = useRef(null);
+    setNodeRef: setSortableRef,
+    attributes,
+    listeners,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: colId, disabled: !isOwner });
 
   const setNodeRef = (node) => {
     setSortableRef(node);
     setDroppableRef(node);
   };
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.85 : 1,
+    flex: 1,
+    minWidth: 280,
+    maxWidth: 420,
+    padding: 14,
+    borderRadius: 16,
+    border: isOver
+      ? "1px solid rgba(79, 140, 255, 0.75)"
+      : "1px solid rgba(255,255,255,0.12)",
+    background: isOver ? "rgba(79, 140, 255, 0.12)" : "rgba(0,0,0,0.18)",
+    minHeight: 240,
+    position: "relative",
+  };
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [name, setName] = useState(column?.name || "");
+  const inputRef = useRef(null);
+
   useEffect(() => {
     setName(column?.name || "");
   }, [column?.name]);
 
   useEffect(() => {
-    if (editingName) {
-      setTimeout(() => inputRef.current?.focus(), 0);
-    }
+    if (editingName) setTimeout(() => inputRef.current?.focus(), 0);
   }, [editingName]);
 
-  const commitRename = async () => {
+  const commitRename = () => {
     const n = name.trim();
     setEditingName(false);
     setMenuOpen(false);
 
     if (!n || n === column.name) {
-      setName(column.name); // reset if empty or unchanged
+      setName(column.name);
       return;
     }
     onRenameColumn?.(column.id, n);
@@ -60,25 +88,31 @@ export default function TaskColumn({
   };
 
   return (
-    <div
-      ref={setNodeRef}
-      style={{
-        flex: 1,
-        minWidth: 280,
-        maxWidth: 420,
-        padding: 14,
-        borderRadius: 16,
-        border: isOver
-          ? "1px solid rgba(79, 140, 255, 0.75)"
-          : "1px solid rgba(255,255,255,0.12)",
-        background: isOver ? "rgba(79, 140, 255, 0.12)" : "rgba(0,0,0,0.18)",
-        transition: "120ms",
-        minHeight: 240,
-        position: "relative",
-      }}
-    >
+    <div ref={setNodeRef} style={style}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+        {/* ✅ handle colonne owner only */}
+        {isOwner && (
+          <div
+            {...attributes}
+            {...listeners}
+            title="Déplacer la colonne"
+            style={{
+              display: "inline-flex",
+              padding: "6px 10px",
+              borderRadius: 10,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(0,0,0,0.20)",
+              cursor: "grab",
+              userSelect: "none",
+              opacity: 0.85,
+              fontSize: 13,
+            }}
+          >
+            ⠿
+          </div>
+        )}
+
         <div style={{ flex: 1, fontWeight: 900 }}>
           {!editingName ? (
             column.name
@@ -100,38 +134,23 @@ export default function TaskColumn({
             />
           )}
         </div>
-          <div
-          {...attributes}
-          {...listeners}
-          title="Déplacer la colonne"
-          style={{
-            display: "inline-flex",
-            padding: "6px 10px",
-            borderRadius: 10,
-            border: "1px solid rgba(255,255,255,0.12)",
-            background: "rgba(0,0,0,0.20)",
-            cursor: "grab",
-            userSelect: "none",
-            opacity: 0.85,
-            fontSize: 13,
-          }}
-        >
-          ⠿
-        </div>
-        {/* Menu button */}
-        <button
-          className="btn btn-secondary"
-          style={{ width: "auto", padding: "6px 10px" }}
-          onClick={() => setMenuOpen((v) => !v)}
-          title="Options"
-          type="button"
-        >
-          ⋯
-        </button>
+
+        {/* ✅ menu owner only */}
+        {isOwner && (
+          <button
+            className="btn btn-secondary"
+            style={{ width: "auto", padding: "6px 10px" }}
+            onClick={() => setMenuOpen((v) => !v)}
+            title="Options"
+            type="button"
+          >
+            ⋯
+          </button>
+        )}
       </div>
 
       {/* Menu */}
-      {menuOpen && (
+      {isOwner && menuOpen && (
         <div
           style={{
             position: "absolute",
@@ -150,9 +169,7 @@ export default function TaskColumn({
             className="btn btn-secondary"
             style={{ width: "100%", justifyContent: "flex-start" }}
             type="button"
-            onClick={() => {
-              setEditingName(true);
-            }}
+            onClick={() => setEditingName(true)}
           >
             ✏️ Renommer
           </button>
@@ -182,11 +199,15 @@ export default function TaskColumn({
       )}
 
       {/* Tasks */}
-       <SortableContext items={tasks.map((t) => `task:${t.id}`)} strategy={verticalListSortingStrategy}>
-          {tasks.map((t) => (
-            <TaskCard key={t.id} task={t} onOpen={() => onOpenTask(t)} />
-          ))}
+      <SortableContext
+        items={tasks.map((t) => `task:${t.id}`)}
+        strategy={verticalListSortingStrategy}
+      >
+        {tasks.map((t) => (
+          <TaskCard key={t.id} task={t} onOpen={() => onOpenTask(t)} />
+        ))}
       </SortableContext>
+
       {tasks.length === 0 && (
         <div style={{ opacity: 0.55, fontSize: 13, padding: "8px 2px" }}>
           Dépose une tâche ici

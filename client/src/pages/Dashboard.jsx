@@ -2,8 +2,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { DndContext, closestCorners } from "@dnd-kit/core";
-import { arrayMove } from "@dnd-kit/sortable";
-import { SortableContext, horizontalListSortingStrategy } from "@dnd-kit/sortable";
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+
 import api from "../services/api";
 import TaskColumn from "../components/TaskColumn";
 import TaskCreateModal from "../components/TaskCreateModal";
@@ -43,95 +47,6 @@ export default function Dashboard() {
     setTimeout(() => setToast(null), 2500);
   };
 
-  // --- Load boards on mount
-  useEffect(() => {
-    setLoadingBoards(true);
-    api
-      .get("/boards")
-      .then((res) => {
-        setBoards(res.data);
-        const last = sessionStorage.getItem("lastBoardId");
-        const lastId = last ? Number(last) : null;
-
-        const exists = lastId && res.data.some(b => Number(b.id) === lastId);
-        if (exists) loadBoard(lastId);
-        else if (res.data.length) loadBoard(Number(res.data[0].id));
-      })
-      .catch(() => {
-        sessionStorage.removeItem("token");
-        window.location.href = "/login";
-      })
-      .finally(() => setLoadingBoards(false));
-  }, []);
-
-  // --- Socket init (once)
-  useEffect(() => {
-    const s = io(SOCKET_URL, { transports: ["websocket", "polling"] });
-    setSocket(s);
-
-    // TASK events (filter by current board)
-    s.on("taskCreated", (t) => {
-      const nt = normalizeTask(t);
-      if (Number(nt.board_id) !== Number(prevBoardRef.current)) return;
-      setTasks((prev) => (prev.some((x) => x.id === nt.id) ? prev : [...prev, nt]));
-    });
-
-    s.on("taskUpdated", (t) => {
-      const nt = normalizeTask(t);
-      if (Number(nt.board_id) !== Number(prevBoardRef.current)) return;
-      setTasks((prev) => prev.map((x) => (x.id === nt.id ? { ...x, ...nt } : x)));
-    });
-
-    s.on("taskDeleted", ({ id, board_id }) => {
-      if (board_id !== prevBoardRef.current) return;
-      setTasks((prev) => prev.filter((x) => x.id !== id));
-    });
-
-    // COLUMN events (optional; only if your backend emits them)
-    s.on("columnCreated", (c) => {
-      const nc = normalizeColumn(c);
-      if (nc.board_id !== prevBoardRef.current) return;
-      setColumns((prev) => (prev.some((x) => x.id === nc.id) ? prev : [...prev, nc]));
-    });
-
-    s.on("columnUpdated", (c) => {
-      const nc = normalizeColumn(c);
-      if (nc.board_id !== prevBoardRef.current) return;
-      setColumns((prev) => prev.map((x) => (x.id === nc.id ? { ...x, ...nc } : x)));
-    });
-
-    s.on("columnDeleted", ({ id, board_id }) => {
-      if (board_id !== prevBoardRef.current) return;
-      setColumns((prev) => prev.filter((x) => x.id !== id));
-      setTasks((prev) => prev.filter((t) => t.column_id !== id));
-    });
-
-    s.on("columnsReordered", ({ board_id, columnIds }) => {
-      if (Number(board_id) !== Number(prevBoardRef.current)) return;
-
-      setColumns((prev) => {
-        const map = new Map(prev.map((c) => [c.id, c]));
-        return columnIds
-          .map((id, idx) => {
-            const c = map.get(id);
-            return c ? { ...c, position: idx } : null;
-          })
-          .filter(Boolean);
-      });
-    });
-
-    return () => {
-      s.off("taskCreated");
-      s.off("taskUpdated");
-      s.off("taskDeleted");
-      s.off("columnCreated");
-      s.off("columnUpdated");
-      s.off("columnDeleted");
-      s.off("columnsReordered");
-      s.disconnect();
-    };
-  }, []);
-
   const normalizeTask = (t) => ({
     ...t,
     id: Number(t.id),
@@ -147,15 +62,112 @@ export default function Dashboard() {
     position: Number(c.position ?? 0),
   });
 
-  // --- Load board: columns + tasks
+  // --- Socket init (once)
+  useEffect(() => {
+    const s = io(SOCKET_URL, { transports: ["websocket", "polling"] });
+    setSocket(s);
+    const handleConnect = () => {
+      const bid = prevBoardRef.current;
+      if (bid) s.emit("board:join", bid);
+    };
+
+    s.on("connect", handleConnect);
+
+    s.on("taskCreated", (t) => {
+      const nt = normalizeTask(t);
+      if (Number(nt.board_id) !== Number(prevBoardRef.current)) return;
+      setTasks((prev) => (prev.some((x) => x.id === nt.id) ? prev : [...prev, nt]));
+    });
+
+    s.on("taskUpdated", (t) => {
+      const nt = normalizeTask(t);
+      if (Number(nt.board_id) !== Number(prevBoardRef.current)) return;
+      setTasks((prev) => prev.map((x) => (x.id === nt.id ? { ...x, ...nt } : x)));
+    });
+
+    s.on("taskDeleted", ({ id, board_id }) => {
+      if (Number(board_id) !== Number(prevBoardRef.current)) return;
+      setTasks((prev) => prev.filter((x) => x.id !== Number(id)));
+    });
+
+    s.on("columnCreated", (c) => {
+      const nc = normalizeColumn(c);
+      if (Number(nc.board_id) !== Number(prevBoardRef.current)) return;
+      setColumns((prev) => (prev.some((x) => x.id === nc.id) ? prev : [...prev, nc]));
+    });
+
+    s.on("columnUpdated", (c) => {
+      const nc = normalizeColumn(c);
+      if (Number(nc.board_id) !== Number(prevBoardRef.current)) return;
+      setColumns((prev) => prev.map((x) => (x.id === nc.id ? { ...x, ...nc } : x)));
+    });
+
+    s.on("columnDeleted", ({ id, board_id }) => {
+      if (Number(board_id) !== Number(prevBoardRef.current)) return;
+      const colId = Number(id);
+      setColumns((prev) => prev.filter((x) => x.id !== colId));
+      setTasks((prev) => prev.filter((t) => t.column_id !== colId));
+    });
+
+    s.on("columnsReordered", ({ board_id, columnIds }) => {
+      if (Number(board_id) !== Number(prevBoardRef.current)) return;
+
+      setColumns((prev) => {
+        const map = new Map(prev.map((c) => [c.id, c]));
+        return columnIds
+          .map((id, idx) => {
+            const c = map.get(Number(id));
+            return c ? { ...c, position: idx } : null;
+          })
+          .filter(Boolean);
+      });
+    });
+
+    return () => {
+      s.off("connect", handleConnect);
+      s.off("taskCreated");
+      s.off("taskUpdated");
+      s.off("taskDeleted");
+      s.off("columnCreated");
+      s.off("columnUpdated");
+      s.off("columnDeleted");
+      s.off("columnsReordered");
+      s.disconnect();
+    };
+  }, []);
+
+  // --- Load boards on mount
+  useEffect(() => {
+    setLoadingBoards(true);
+    api
+      .get("/boards")
+      .then((res) => {
+        setBoards(res.data);
+
+        const last = sessionStorage.getItem("lastBoardId");
+        const lastId = last ? Number(last) : null;
+
+        const exists = lastId && res.data.some((b) => Number(b.id) === lastId);
+        if (exists) loadBoard(lastId);
+        else if (res.data.length) loadBoard(Number(res.data[0].id));
+      })
+      .catch(() => {
+        sessionStorage.removeItem("token");
+        window.location.href = "/login";
+      })
+      .finally(() => setLoadingBoards(false));
+  }, []);
+
+  // --- Load board: columns + tasks + role
   const loadBoard = async (boardId) => {
-    const id = Number(boardId); 
+    const id = Number(boardId);
     if (!Number.isInteger(id)) return;
+
     setShowCreateTask(false);
     setEditingTask(null);
+    setShowAdmin(false);
     setLoadingBoardData(true);
 
-    // leave old room / join new 
     const prev = prevBoardRef.current;
     if (socket && prev) socket.emit("board:leave", prev);
     if (socket) socket.emit("board:join", id);
@@ -163,38 +175,32 @@ export default function Dashboard() {
     prevBoardRef.current = id;
     setSelectedBoardId(id);
 
-    // clear UI while loading
     setColumns([]);
     setTasks([]);
 
     try {
       const [colsRes, tasksRes, meRes] = await Promise.all([
-        api.get(`/boards/${boardId}/columns`),
-        api.get(`/tasks/board/${boardId}`),
-        api.get(`/boards/${boardId}/me`),
+        api.get(`/boards/${id}/columns`),
+        api.get(`/tasks/board/${id}`),
+        api.get(`/boards/${id}/me`),
       ]);
 
       setIsOwner(meRes.data.role === "owner");
-
       setColumns(colsRes.data.map(normalizeColumn));
       setTasks(tasksRes.data.map(normalizeTask));
-      console.log("cols ids:", colsRes.data.map(c => [c.id, typeof c.id]));
-      console.log("tasks col:", tasksRes.data.map(t => [t.column_id, typeof t.column_id]));
     } catch (e) {
       console.error(e);
       showToast("Impossible de charger le board (colonnes/tâches)", "error");
     } finally {
       setLoadingBoardData(false);
-      sessionStorage.setItem("lastBoardId", String(boardId));
+      sessionStorage.setItem("lastBoardId", String(id));
     }
   };
 
-  // --- Derived: sorted columns
   const columnsSorted = useMemo(() => {
     return [...columns].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
   }, [columns]);
 
-  // --- Derived: tasks grouped by column_id
   const tasksByColumnId = useMemo(() => {
     const map = new Map();
     for (const c of columnsSorted) map.set(c.id, []);
@@ -225,16 +231,17 @@ export default function Dashboard() {
     }
   };
 
-  // --- Create task (modal) expects: { title, description, column_id }
+  // --- Create task
   const createTask = async ({ title, description, column_id }) => {
     if (!selectedBoardId) return showToast("Choisis un board d’abord", "error");
+
     const colId = Number(column_id);
     if (!Number.isInteger(colId)) return showToast("Colonne invalide", "error");
 
     try {
       const position = tasks.filter((t) => t.column_id === colId).length;
 
-      await api.post("/tasks", {
+      const res = await api.post("/tasks", {
         board_id: selectedBoardId,
         column_id: colId,
         title,
@@ -242,7 +249,11 @@ export default function Dashboard() {
         position,
       });
 
-      // Let socket add it (or you can refetch if you want)
+      const nt = normalizeTask(res.data);
+
+      // ✅ Ajout immédiat (et anti-doublon si le socket envoie aussi taskCreated)
+      setTasks((prev) => (prev.some((x) => x.id === nt.id) ? prev : [...prev, nt]));
+
       setShowCreateTask(false);
     } catch (e) {
       console.error(e);
@@ -250,7 +261,6 @@ export default function Dashboard() {
     }
   };
 
-  // --- Save task edits (modal)
   const saveTask = async (id, patch) => {
     const previous = tasks;
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
@@ -265,7 +275,6 @@ export default function Dashboard() {
     }
   };
 
-  // --- Delete task
   const deleteTask = async (id) => {
     const previous = tasks;
     setTasks((prev) => prev.filter((t) => t.id !== id));
@@ -279,15 +288,74 @@ export default function Dashboard() {
       showToast("Impossible de supprimer la tâche", "error");
     }
   };
-  
 
+  // --- Columns CRUD (owner only in UI)
+  const createColumn = async () => {
+    if (!selectedBoardId) return showToast("Choisis un board", "error");
+    if (!isOwner) return showToast("Seul le owner peut créer une colonne", "error");
+
+    const name = newColumnName.trim();
+    if (!name) return;
+
+    try {
+      setCreatingColumn(true);
+      const position = columnsSorted.length;
+      const res = await api.post(`/boards/${selectedBoardId}/columns`, { name, position });
+
+      const nc = normalizeColumn(res.data);
+      setColumns((prev) => (prev.some((c) => c.id === nc.id) ? prev : [...prev, nc]));
+      setNewColumnName("");
+      showToast("Colonne créée");
+      // ✅ socket columnCreated arrivera aussi, mais prev.some évite le double
+    } catch (e) {
+      console.error(e);
+      showToast("Impossible de créer la colonne", "error");
+    } finally {
+      setCreatingColumn(false);
+    }
+  };
+
+  const renameColumn = async (columnId, name) => {
+    if (!selectedBoardId) return;
+    if (!isOwner) return showToast("Seul le owner peut renommer", "error");
+
+    const prev = columns;
+    setColumns((p) => p.map((c) => (c.id === columnId ? { ...c, name } : c)));
+
+    try {
+      await api.patch(`/boards/${selectedBoardId}/columns/${columnId}`, { name });
+      showToast("Colonne renommée");
+    } catch (e) {
+      console.error(e);
+      setColumns(prev);
+      showToast("Impossible de renommer la colonne", "error");
+    }
+  };
+
+  const removeColumn = async (columnId) => {
+    if (!selectedBoardId) return;
+    if (!isOwner) return showToast("Seul le owner peut supprimer", "error");
+
+    try {
+      await api.delete(`/boards/${selectedBoardId}/columns/${columnId}`);
+      showToast("Colonne supprimée");
+    } catch (e) {
+      console.error(e);
+      showToast(e?.response?.data?.message || "Impossible de supprimer la colonne", "error");
+    }
+  };
+
+  // --- DND
   const onDragEnd = async ({ active, over }) => {
     if (!over) return;
 
     const activeId = String(active.id);
     const overId = String(over.id);
 
+    // ✅ Reorder colonnes (owner only)
     if (activeId.startsWith("col:") && overId.startsWith("col:")) {
+      if (!isOwner) return;
+
       const activeColId = Number(activeId.replace("col:", ""));
       const overColId = Number(overId.replace("col:", ""));
 
@@ -297,7 +365,6 @@ export default function Dashboard() {
 
       const previous = columns;
 
-      // ordre optimiste (UI)
       const moved = arrayMove(columnsSorted, oldIndex, newIndex).map((c, idx) => ({
         ...c,
         position: idx,
@@ -314,18 +381,16 @@ export default function Dashboard() {
         setColumns(previous);
         showToast("Erreur reorder colonnes", "error");
       }
-
       return;
     }
 
-
+    // ✅ Tasks (TOUT LE MONDE)
     if (!activeId.startsWith("task:")) return;
 
     const taskId = Number(activeId.replace("task:", ""));
     const activeTask = tasks.find((t) => Number(t.id) === taskId);
     if (!activeTask) return;
 
-    // Déterminer la colonne cible
     let targetColumnId = null;
 
     if (overId.startsWith("col:")) {
@@ -340,7 +405,6 @@ export default function Dashboard() {
 
     const sourceColumnId = activeTask.column_id;
 
-    // Liste source & cible (triées)
     const sourceList = tasks
       .filter((t) => t.column_id === sourceColumnId)
       .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
@@ -351,52 +415,39 @@ export default function Dashboard() {
 
     const sourceIndex = sourceList.findIndex((t) => t.id === taskId);
 
-    // Si drop sur une task, index cible = index de cette task
-    let targetIndex = targetList.length; // drop sur colonne => fin
+    let targetIndex = targetList.length;
     if (overId.startsWith("task:")) {
       const overTaskId = Number(overId.replace("task:", ""));
-      targetIndex = targetList.findIndex((t) => t.id === overTaskId);
-      if (targetIndex < 0) targetIndex = targetList.length;
+      const idx = targetList.findIndex((t) => t.id === overTaskId);
+      targetIndex = idx >= 0 ? idx : targetList.length;
     }
 
-    // --- Construire la nouvelle liste source/cible
     let newSource = [...sourceList];
     let newTarget = sourceColumnId === targetColumnId ? newSource : [...targetList];
 
-    // retirer l’item de la source
     const [moved] = newSource.splice(sourceIndex, 1);
-
-    // si on change de colonne, on modifie column_id
     const movedUpdated = { ...moved, column_id: targetColumnId };
 
-    // insérer dans cible
-    newTarget.splice(targetIndex, 0, movedUpdated);
-
-    // si même colonne => c’est juste un reorder (arrayMove simplifie)
     if (sourceColumnId === targetColumnId) {
       newTarget = arrayMove(sourceList, sourceIndex, targetIndex);
+    } else {
+      newTarget.splice(targetIndex, 0, movedUpdated);
     }
 
-    // recalcul positions (0..n-1)
     newSource = newSource.map((t, i) => ({ ...t, position: i }));
     newTarget = newTarget.map((t, i) => ({ ...t, position: i }));
 
-    // optimistic UI (remplacer toutes les tasks des colonnes touchées)
     const previous = tasks;
     setTasks((prev) => {
       const others = prev.filter(
         (t) => t.column_id !== sourceColumnId && t.column_id !== targetColumnId
       );
-      const merged =
-        sourceColumnId === targetColumnId
-          ? [...others, ...newTarget]
-          : [...others, ...newSource, ...newTarget];
 
-      return merged;
+      return sourceColumnId === targetColumnId
+        ? [...others, ...newTarget]
+        : [...others, ...newSource, ...newTarget];
     });
 
-    // --- Persistance (simple et fiable) : patch les tasks impactées
-    // (tu peux optimiser plus tard avec un endpoint bulk)
     try {
       const toSave =
         sourceColumnId === targetColumnId ? newTarget : [...newSource, ...newTarget];
@@ -414,12 +465,13 @@ export default function Dashboard() {
   };
 
   const logout = () => {
-    sessionStorage.removeItem("token"); // (ton code avait sessionStorage)
+    sessionStorage.removeItem("token");
     window.location.href = "/";
   };
 
   const deleteBoard = async () => {
     if (!selectedBoardId) return;
+    if (!isOwner) return showToast("Seul le owner peut supprimer le board", "error");
 
     const b = boards.find((x) => x.id === selectedBoardId);
     const ok = window.confirm(
@@ -429,7 +481,6 @@ export default function Dashboard() {
 
     try {
       await api.delete(`/boards/${selectedBoardId}`);
-
       setBoards((prev) => prev.filter((x) => x.id !== selectedBoardId));
       setSelectedBoardId(null);
       prevBoardRef.current = null;
@@ -437,68 +488,13 @@ export default function Dashboard() {
       setTasks([]);
       setShowCreateTask(false);
       setEditingTask(null);
+      setShowAdmin(false);
       showToast("Board supprimé");
     } catch (e) {
       console.error(e);
       showToast(e?.response?.data?.message || "Impossible de supprimer le board", "error");
     }
   };
-  const createColumn = async () => {
-    if (!selectedBoardId) return showToast("Choisis un board", "error");
-
-    const name = newColumnName.trim();
-    if (!name) return;
-
-    try {
-      setCreatingColumn(true);
-
-      const position = columnsSorted.length; // à la fin
-      const res = await api.post(`/boards/${selectedBoardId}/columns`, { name, position });
-      const nc = normalizeColumn(res.data);
-
-      setColumns((prev) => (prev.some((c) => c.id === nc.id) ? prev : [...prev, nc]));
-      setNewColumnName("");
-      showToast("Colonne créée");
-    } catch (e) {
-      console.error(e);
-      showToast("Impossible de créer la colonne", "error");
-    } finally {
-      setCreatingColumn(false);
-    }
-  };
-
-  const renameColumn = async (columnId, name) => {
-    if (!selectedBoardId) return;
-
-    // optimistic
-    const prev = columns;
-    setColumns((p) => p.map((c) => (c.id === columnId ? { ...c, name } : c)));
-
-    try {
-      await api.patch(`/boards/${selectedBoardId}/columns/${columnId}`, { name });
-      showToast("Colonne renommée");
-      // socket columnUpdated va aussi arriver (ok)
-    } catch (e) {
-      console.error(e);
-      setColumns(prev);
-      showToast("Impossible de renommer la colonne", "error");
-    }
-  };
-
-  const removeColumn = async (columnId) => {
-    if (!selectedBoardId) return;
-
-    try {
-      await api.delete(`/boards/${selectedBoardId}/columns/${columnId}`);
-      showToast("Colonne supprimée");
-      // socket columnDeleted va enlever côté client (ou tu peux le faire ici aussi)
-    } catch (e) {
-      console.error(e);
-      const msg = e?.response?.data?.message || "Impossible de supprimer la colonne";
-      showToast(msg, "error");
-    }
-  };
-
 
   return (
     <div style={{ padding: 20 }}>
@@ -551,8 +547,7 @@ export default function Dashboard() {
             className="btn btn-secondary"
             style={{
               width: "auto",
-              borderColor:
-                selectedBoardId === b.id ? "rgba(79, 140, 255, 0.6)" : undefined,
+              borderColor: selectedBoardId === b.id ? "rgba(79, 140, 255, 0.6)" : undefined,
             }}
             onClick={() => loadBoard(b.id)}
           >
@@ -561,32 +556,31 @@ export default function Dashboard() {
         ))}
       </div>
 
+      {/* Actions (tous) */}
       {selectedBoardId && (
         <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
-          
           <button
             className="btn btn-primary"
             style={{ width: "auto" }}
             onClick={() => setShowCreateTask(true)}
             disabled={!selectedBoardId || columnsSorted.length === 0}
-            title={!selectedBoardId ? "Choisis un board d’abord" : ""}
           >
             + Task
           </button>
         </div>
       )}
+
+      {/* Actions owner */}
       {selectedBoardId && isOwner && (
         <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
-        <button
-          className="btn btn-secondary"
-          style={{ width: "auto" }}
-          onClick={() => setShowAdmin(true)}
-        >
-          👤 Admin
-        </button>
-        <button className="btn btn-secondary" style={{ width: "auto" }} onClick={deleteBoard}>
+          <button className="btn btn-secondary" style={{ width: "auto" }} onClick={() => setShowAdmin(true)}>
+            👤 Admin
+          </button>
+
+          <button className="btn btn-secondary" style={{ width: "auto" }} onClick={deleteBoard}>
             🗑️ Supprimer board
           </button>
+
           <input
             className="input"
             style={{ width: 220 }}
@@ -604,19 +598,19 @@ export default function Dashboard() {
           >
             + Colonne
           </button>
-          </div>
+        </div>
       )}
+
       {showAdmin && isOwner && (
-          <BoardAdminModal boardId={selectedBoardId} onClose={() => setShowAdmin(false)} />
-        )}
+        <BoardAdminModal boardId={selectedBoardId} onClose={() => setShowAdmin(false)} />
+      )}
+
       {!selectedBoardId ? (
         <div style={{ opacity: 0.75 }}>Choisis un board pour voir les tâches.</div>
       ) : loadingBoardData ? (
         <div style={{ opacity: 0.75 }}>Chargement du board…</div>
       ) : columnsSorted.length === 0 ? (
-        <div style={{ opacity: 0.75 }}>
-          Aucune colonne sur ce board. (Ajoute des colonnes côté backend/UI)
-        </div>
+        <div style={{ opacity: 0.75 }}>Aucune colonne sur ce board.</div>
       ) : (
         <DndContext collisionDetection={closestCorners} onDragEnd={onDragEnd}>
           <SortableContext
@@ -629,6 +623,7 @@ export default function Dashboard() {
                   key={col.id}
                   column={col}
                   tasks={tasksByColumnId.get(col.id) || []}
+                  isOwner={isOwner}
                   onOpenTask={(t) => setEditingTask(t)}
                   onRenameColumn={renameColumn}
                   onDeleteColumn={removeColumn}
@@ -641,11 +636,7 @@ export default function Dashboard() {
 
       {/* Modals */}
       {showCreateTask && (
-        <TaskCreateModal
-          columns={columnsSorted}
-          onClose={() => setShowCreateTask(false)}
-          onCreate={createTask}
-        />
+        <TaskCreateModal columns={columnsSorted} onClose={() => setShowCreateTask(false)} onCreate={createTask} />
       )}
 
       {editingTask && (
@@ -668,10 +659,7 @@ export default function Dashboard() {
             padding: "10px 14px",
             borderRadius: 12,
             border: "1px solid rgba(255,255,255,0.15)",
-            background:
-              toast.type === "error"
-                ? "rgba(255, 70, 70, 0.18)"
-                : "rgba(70, 180, 120, 0.18)",
+            background: toast.type === "error" ? "rgba(255, 70, 70, 0.18)" : "rgba(70, 180, 120, 0.18)",
             color: "rgba(255,255,255,0.92)",
             backdropFilter: "blur(10px)",
             zIndex: 1000,
