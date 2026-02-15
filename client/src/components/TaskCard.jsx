@@ -27,10 +27,26 @@ export default function TaskCard({ task, onOpen }) {
       {/* click */}
       <div
         onClick={onOpen}
-        style={{ cursor: "pointer", fontWeight: 800, marginBottom: 8 }}
+        style={{
+          cursor: "pointer",
+          fontWeight: 800,
+          marginBottom: 8,
+
+          // ✅ wrap nicely
+          whiteSpace: "normal",
+          overflowWrap: "anywhere",
+          wordBreak: "break-word",
+
+          // ✅ clamp to 3 lines + ellipsis
+          display: "-webkit-box",
+          WebkitLineClamp: 3,
+          WebkitBoxOrient: "vertical",
+          overflow: "hidden",
+        }}
       >
         {task.title}
       </div>
+
 
       {task.description && (
         <div style={{ opacity: 0.75, fontSize: 13, marginBottom: 10 }}>

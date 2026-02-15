@@ -251,7 +251,6 @@ export default function Dashboard() {
 
       const nt = normalizeTask(res.data);
 
-      // ✅ Ajout immédiat (et anti-doublon si le socket envoie aussi taskCreated)
       setTasks((prev) => (prev.some((x) => x.id === nt.id) ? prev : [...prev, nt]));
 
       setShowCreateTask(false);
@@ -306,7 +305,6 @@ export default function Dashboard() {
       setColumns((prev) => (prev.some((c) => c.id === nc.id) ? prev : [...prev, nc]));
       setNewColumnName("");
       showToast("Colonne créée");
-      // ✅ socket columnCreated arrivera aussi, mais prev.some évite le double
     } catch (e) {
       console.error(e);
       showToast("Impossible de créer la colonne", "error");
@@ -352,7 +350,7 @@ export default function Dashboard() {
     const activeId = String(active.id);
     const overId = String(over.id);
 
-    // ✅ Reorder colonnes (owner only)
+    // Reorder colonnes (owner only)
     if (activeId.startsWith("col:") && overId.startsWith("col:")) {
       if (!isOwner) return;
 
@@ -384,7 +382,7 @@ export default function Dashboard() {
       return;
     }
 
-    // ✅ Tasks (TOUT LE MONDE)
+    // Tasks (TOUT LE MONDE)
     if (!activeId.startsWith("task:")) return;
 
     const taskId = Number(activeId.replace("task:", ""));
@@ -617,7 +615,18 @@ export default function Dashboard() {
             items={columnsSorted.map((c) => `col:${c.id}`)}
             strategy={horizontalListSortingStrategy}
           >
-            <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 14,
+                alignItems: "flex-start",
+                flexWrap: "nowrap",
+                overflowX: "auto",
+                overflowY: "hidden",
+                paddingBottom: 10,
+                WebkitOverflowScrolling: "touch",
+              }}
+            >
               {columnsSorted.map((col) => (
                 <TaskColumn
                   key={col.id}
